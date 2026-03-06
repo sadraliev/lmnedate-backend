@@ -1,0 +1,58 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: fastify-app-mongodb
+    restart: unless-stopped
+    ports:
+      - "27019:27017"  # Non-default port (27019 on host -> 27017 in container)
+    environment:
+      MONGO_INITDB_DATABASE: fastify-app
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/fastify-app --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fastify-app-redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"  # Non-default port (6381 on host -> 6379 in container)
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  bull-board:
+    image: venatum/bull-board
+    container_name: fastify-app-bull-board
+    restart: unless-stopped
+    ports:
+      - "3333:3000"  # Bull Board UI on port 3333
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  redis_data:
+    driver: local
