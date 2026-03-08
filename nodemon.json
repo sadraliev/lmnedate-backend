@@ -1,7 +1,0 @@
-{
-  "watch": [
-    "src"
-  ],
-  "ext": "ts,js",
-  "exec": "concurrently \"tsx src/index.ts\" \"tsx src/shared/jobs/index.ts\""
-}
