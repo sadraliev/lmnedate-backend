@@ -14,6 +14,7 @@ import { env } from "./shared/config/env.js";
 import { logger } from "./shared/config/logger.js";
 import { registerModules } from "./core/app.js";
 import { authModule } from "./modules/auth/auth.module.js";
+import { telegramModule } from "./modules/telegram/telegram.module.js";
 import type { Module } from "./core/app.js";
 
 // Custom swagger transform: passes only Zod schemas to jsonSchemaTransform,
@@ -57,7 +58,7 @@ declare module "fastify" {
   }
 }
 
-const modules: Module[] = [authModule];
+const modules: Module[] = [authModule, telegramModule];
 
 export const createServer = async () => {
   const app = Fastify({

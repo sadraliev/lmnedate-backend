@@ -1,4 +1,4 @@
-.PHONY: help install dev build start lint clean docker-up docker-down docker-restart docker-logs db-shell redis-cli test setup all bull-board
+.PHONY: help install dev build start lint clean docker-up docker-down docker-restart docker-logs db-shell redis-cli test setup all bull-board up-scraper logs-scraper
 
 # Default target
 .DEFAULT_GOAL := help
@@ -51,12 +51,21 @@ jobs: ## Run jobs server with hot reload
 	@echo "$(BLUE)Starting jobs server...$(NC)"
 	@npm run jobs
 # Docker
-up: ## Start MongoDB, Redis, and Bull Board containers
+up: ## Start all containers (MongoDB, Redis, Bull Board, Scraper)
 	@echo "$(BLUE)Starting Docker containers...$(NC)"
 	@docker-compose up -d
 	@echo "$(GREEN)✓ MongoDB running on port 27019$(NC)"
 	@echo "$(GREEN)✓ Redis running on port 6381$(NC)"
 	@echo "$(GREEN)✓ Bull Board running on port 3333$(NC)"
+	@echo "$(GREEN)✓ Instagram scraper running$(NC)"
+
+up-scraper: ## Start Instagram scraper (dev mode with hot reload)
+	@echo "$(BLUE)Starting Instagram scraper (dev)...$(NC)"
+	@docker-compose up -d --build instagram-scraper
+	@echo "$(GREEN)✓ Instagram scraper running (hot reload via tsx --watch)$(NC)"
+
+logs-scraper: ## View Instagram scraper logs
+	@docker-compose logs -f instagram-scraper
 
 up-board: ## Start Bull Board container
 	@echo "$(BLUE)Starting Bull Board...$(NC)"

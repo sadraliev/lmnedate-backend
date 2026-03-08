@@ -12,6 +12,9 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().default('7d'),
+  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+  INSTAGRAM_POLL_INTERVAL_MS: z.string().default('900000'),
+  INSTAGRAM_MAX_SUBSCRIPTIONS_PER_USER: z.string().default('10'),
 });
 
 export type Env = z.infer<typeof envSchema>;
