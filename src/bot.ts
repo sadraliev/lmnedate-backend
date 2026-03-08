@@ -13,7 +13,7 @@ import { Queue, Worker } from 'bullmq';
 import type { Job } from 'bullmq';
 import { QUEUE_NAMES } from './shared/jobs/queue-names.js';
 import type { ScrapeJobData, DeliverJobData } from './shared/jobs/job-types.js';
-import { parseRedisUrl } from './shared/config/redis-standalone.js';
+import { createRedisConnection } from './shared/config/redis-standalone.js';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -26,8 +26,7 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-const redisConfig = parseRedisUrl(REDIS_URL);
-const redisConnection = { host: redisConfig.host, port: redisConfig.port };
+const redisConnection = createRedisConnection(REDIS_URL, 'bot');
 
 // ---------------------------------------------------------------------------
 // Grammy bot

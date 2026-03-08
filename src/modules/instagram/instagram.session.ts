@@ -9,26 +9,37 @@ import type { Redis as RedisClient } from 'ioredis';
 import type { Browser } from 'playwright';
 
 const SESSION_KEY_PREFIX = 'ig:session:';
+const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 
 /**
  * Load a cached session from Redis. Returns the storageState JSON string or null.
+ * Validates that the stored value is valid JSON; deletes corrupted entries.
  */
 export const loadSession = async (
   redis: RedisClient,
   username: string,
 ): Promise<string | null> => {
-  return redis.get(`${SESSION_KEY_PREFIX}${username}`);
+  const raw = await redis.get(`${SESSION_KEY_PREFIX}${username}`);
+  if (!raw) return null;
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    console.error(`[session] Corrupted session for @${username}, deleting`);
+    await redis.del(`${SESSION_KEY_PREFIX}${username}`);
+    return null;
+  }
 };
 
 /**
- * Save a session to Redis.
+ * Save a session to Redis with a 24-hour TTL.
  */
 export const saveSession = async (
   redis: RedisClient,
   username: string,
   storageState: string,
 ): Promise<void> => {
-  await redis.set(`${SESSION_KEY_PREFIX}${username}`, storageState);
+  await redis.set(`${SESSION_KEY_PREFIX}${username}`, storageState, 'EX', SESSION_TTL_SECONDS);
 };
 
 /**

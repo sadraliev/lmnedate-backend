@@ -19,7 +19,7 @@ import { chromium, type Browser, type BrowserContext } from 'playwright';
 import { Redis } from 'ioredis';
 import { QUEUE_NAMES } from './shared/jobs/queue-names.js';
 import type { ScrapeJobData, DeliverJobData } from './shared/jobs/job-types.js';
-import { parseRedisUrl } from './shared/config/redis-standalone.js';
+import { createRedisConnection } from './shared/config/redis-standalone.js';
 import { extractPosts, extractPostsFromHtml } from './modules/instagram/instagram.parser.js';
 import { loadSession, saveSession, loginWithPlaywright } from './modules/instagram/instagram.session.js';
 import type { InstagramPost } from './modules/telegram/telegram.types.js';
@@ -33,15 +33,22 @@ const SCRAPE_TIMEOUT_MS = parseInt(process.env.SCRAPE_TIMEOUT_MS ?? '30000', 10)
 const INSTAGRAM_USERNAME = process.env.INSTAGRAM_USERNAME ?? '';
 const INSTAGRAM_PASSWORD = process.env.INSTAGRAM_PASSWORD ?? '';
 
-const redisConfig = parseRedisUrl(REDIS_URL);
-
 // ---------------------------------------------------------------------------
-// Redis connection for session storage
+// Redis connection for session storage (with retry + event handlers)
 // ---------------------------------------------------------------------------
 let redis: Redis;
 
 const connectRedis = (): Redis => {
-  redis = new Redis(REDIS_URL);
+  redis = new Redis(REDIS_URL, {
+    retryStrategy: (times) => {
+      const delay = Math.min(times * 500, 30_000);
+      console.log(`[scraper] Redis reconnecting (attempt ${times}, next in ${delay}ms)`);
+      return delay;
+    },
+    maxRetriesPerRequest: 3,
+  });
+  redis.on('error', (err) => console.error('[scraper] Redis error:', err.message));
+  redis.on('reconnecting', () => console.log('[scraper] Redis reconnecting...'));
   console.log(`[scraper] Connected to Redis`);
   return redis;
 };
@@ -87,6 +94,10 @@ let browser: Browser | null = null;
 const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
   browser = await chromium.launch({ headless: true });
+  browser.on('disconnected', () => {
+    console.log('[scraper] Browser disconnected, will relaunch on next job');
+    browser = null;
+  });
   return browser;
 };
 
@@ -95,6 +106,18 @@ const closeBrowser = async (): Promise<void> => {
     await browser.close();
     browser = null;
   }
+};
+
+// ---------------------------------------------------------------------------
+// Timeout helper
+// ---------------------------------------------------------------------------
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
 };
 
 // ---------------------------------------------------------------------------
@@ -116,7 +139,12 @@ const scrapeProfile = async (
     };
 
     if (cachedStorageState) {
-      contextOptions.storageState = JSON.parse(cachedStorageState);
+      try {
+        contextOptions.storageState = JSON.parse(cachedStorageState);
+      } catch {
+        console.error('[scraper] Corrupted cached session, clearing');
+        cachedStorageState = null;
+      }
     }
 
     context = await b.newContext(contextOptions);
@@ -207,7 +235,7 @@ const scrapeProfile = async (
 
     return posts.slice(0, 12);
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
   }
 };
 
@@ -218,8 +246,10 @@ const main = async () => {
   connectRedis();
   await initSession();
 
+  const bullmqConnection = createRedisConnection(REDIS_URL, 'scraper-bullmq');
+
   const deliverQueue = new Queue<DeliverJobData>(QUEUE_NAMES.INSTAGRAM_DELIVER, {
-    connection: { host: redisConfig.host, port: redisConfig.port },
+    connection: bullmqConnection,
   });
 
   const worker = new Worker<ScrapeJobData>(
@@ -229,7 +259,11 @@ const main = async () => {
       console.log(`[scraper] Processing scrape job for @${username} (chatId=${chatId})`);
 
       try {
-        const rawPosts = await scrapeProfile(username);
+        const rawPosts = await withTimeout(
+          scrapeProfile(username),
+          SCRAPE_TIMEOUT_MS + 10_000,
+          `scrape @${username}`,
+        );
 
         if (rawPosts.length === 0) {
           console.log(`[scraper] No posts found for @${username}`);
@@ -275,7 +309,7 @@ const main = async () => {
       }
     },
     {
-      connection: { host: redisConfig.host, port: redisConfig.port },
+      connection: bullmqConnection,
       concurrency: SCRAPE_CONCURRENCY,
     },
   );
