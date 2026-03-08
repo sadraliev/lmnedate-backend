@@ -29,8 +29,8 @@ setup: install ## Initial setup (install + create .env)
 	fi
 
 # Development
-dev-web: ## Run web server (Fastify)
-	@pnpm dev:web
+dev-api: ## Run API server (Fastify)
+	@pnpm dev:api
 
 dev-bot: ## Run Telegram bot
 	@pnpm dev:bot

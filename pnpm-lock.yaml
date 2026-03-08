@@ -36,40 +36,7 @@ importers:
         specifier: ^4.0.17
         version: 4.0.18(@types/node@25.3.5)(@vitest/ui@4.0.18)(tsx@4.21.0)(yaml@2.8.2)
 
-  apps/bot:
-    dependencies:
-      '@app/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      bullmq:
-        specifier: ^5.66.5
-        version: 5.70.4
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.3.1
-      grammy:
-        specifier: ^1.41.1
-        version: 1.41.1
-
-  apps/scraper:
-    dependencies:
-      '@app/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      bullmq:
-        specifier: ^5.66.5
-        version: 5.70.4
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.3.1
-      ioredis:
-        specifier: ^5.9.2
-        version: 5.10.0
-      playwright:
-        specifier: ^1.58.2
-        version: 1.58.2
-
-  apps/web:
+  apps/api:
     dependencies:
       '@app/shared':
         specifier: workspace:*
@@ -137,6 +104,39 @@ importers:
       zod:
         specifier: ^4.3.5
         version: 4.3.6
+
+  apps/bot:
+    dependencies:
+      '@app/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      bullmq:
+        specifier: ^5.66.5
+        version: 5.70.4
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.3.1
+      grammy:
+        specifier: ^1.41.1
+        version: 1.41.1
+
+  apps/scraper:
+    dependencies:
+      '@app/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      bullmq:
+        specifier: ^5.66.5
+        version: 5.70.4
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.3.1
+      ioredis:
+        specifier: ^5.9.2
+        version: 5.10.0
+      playwright:
+        specifier: ^1.58.2
+        version: 1.58.2
 
   packages/shared: {}
 
