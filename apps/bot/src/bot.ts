@@ -5,29 +5,16 @@
  * /update <username> → enqueue scrape job with chatId
  */
 
-import 'dotenv/config';
-import { Bot } from 'grammy';
 import { Queue } from 'bullmq';
 import { QUEUE_NAMES, createRedisConnection } from '@app/shared';
 import type { ScrapeJobData } from '@app/shared';
+import { bot } from './bot-instance.js';
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error('[bot] TELEGRAM_BOT_TOKEN is required');
-  process.exit(1);
-}
-
 const redisConnection = createRedisConnection(REDIS_URL, 'bot');
-
-// ---------------------------------------------------------------------------
-// Grammy bot
-// ---------------------------------------------------------------------------
-const bot = new Bot(TELEGRAM_BOT_TOKEN);
 
 const scrapeQueue = new Queue<ScrapeJobData>(QUEUE_NAMES.INSTAGRAM_SCRAPE, {
   connection: redisConnection,

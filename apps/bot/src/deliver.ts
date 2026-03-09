@@ -5,26 +5,16 @@
  * Uses Grammy Bot in "API-only" mode (no long polling).
  */
 
-import 'dotenv/config';
-import { Bot } from 'grammy';
 import { Worker } from 'bullmq';
 import type { Job } from 'bullmq';
 import { QUEUE_NAMES, createRedisConnection } from '@app/shared';
 import type { DeliverJobData } from '@app/shared';
+import { bot } from './bot-instance.js';
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error('[deliver] TELEGRAM_BOT_TOKEN is required');
-  process.exit(1);
-}
-
-// Grammy in "API-only" mode — no long polling
-const bot = new Bot(TELEGRAM_BOT_TOKEN);
 const redisConnection = createRedisConnection(REDIS_URL, 'deliver');
 
 // ---------------------------------------------------------------------------
