@@ -1,4 +1,4 @@
-import type { InstagramPost } from '../telegram/telegram.types.js';
+import type { ScrapedPost } from './post-types.js';
 
 /**
  * Extract posts from a JSON response (GraphQL or API v1)
@@ -6,7 +6,7 @@ import type { InstagramPost } from '../telegram/telegram.types.js';
 export const extractPosts = (
   data: unknown,
   username: string,
-  posts: Omit<InstagramPost, '_id'>[],
+  posts: ScrapedPost[],
 ): void => {
   if (!data || typeof data !== 'object') return;
 
@@ -44,7 +44,7 @@ export const extractPosts = (
 export const extractPostsFromHtml = (
   html: string,
   username: string,
-  posts: Omit<InstagramPost, '_id'>[],
+  posts: ScrapedPost[],
 ): void => {
   // Look for JSON data embedded in script tags
   const scriptRegex = /window\._sharedData\s*=\s*({.+?});<\/script>/;
@@ -77,7 +77,7 @@ export const extractPostsFromHtml = (
 export const parseGraphQLNode = (
   node: Record<string, unknown>,
   username: string,
-): Omit<InstagramPost, '_id'> | null => {
+): ScrapedPost | null => {
   const id = node.id as string;
   const shortcode = node.shortcode as string;
   if (!id || !shortcode) return null;
@@ -109,7 +109,7 @@ export const parseGraphQLNode = (
 export const parseApiV1Item = (
   item: Record<string, unknown>,
   username: string,
-): Omit<InstagramPost, '_id'> | null => {
+): ScrapedPost | null => {
   const id = (item.pk || item.id) as string;
   const code = item.code as string;
   if (!id || !code) return null;

@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb';
+import type { ScrapedPost } from '@app/shared';
 
 export type TelegramUser = {
   _id: ObjectId;
@@ -21,14 +22,6 @@ export type Subscription = {
   updatedAt: Date;
 };
 
-export type InstagramPost = {
+export type InstagramPost = ScrapedPost & {
   _id: ObjectId;
-  instagramUsername: string;
-  postId: string;
-  caption?: string;
-  mediaUrl: string;
-  mediaType: 'image' | 'video' | 'carousel';
-  permalink: string;
-  timestamp: Date;
-  createdAt: Date;
 };
