@@ -103,6 +103,7 @@ jobs:
             EOF
             echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
             docker compose -f docker-compose.prod.yml pull
+            docker image prune -af
             docker compose -f docker-compose.prod.yml up -d
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
