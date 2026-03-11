@@ -101,7 +101,11 @@ const main = async () => {
 
         // Store posts (duplicates are skipped via unique index)
         const storedPosts = await storeNewPosts(rawPosts);
-        jobLog.info({ stored: storedPosts.length, total: rawPosts.length }, 'Stored posts');
+        const dupCount = rawPosts.length - storedPosts.length;
+        jobLog.info({ stored: storedPosts.length, duplicates: dupCount, total: rawPosts.length }, 'Stored posts');
+        if (dupCount > 0) {
+          await job.log(`Dedup: ${dupCount}/${rawPosts.length} posts already stored, ${storedPosts.length} new`);
+        }
 
         // Get account's lastPostId for dedup
         const account = await findAccountByUsername(username);
@@ -111,6 +115,7 @@ const main = async () => {
         const newPosts = await getNewPostsSince(username, lastPostId);
 
         if (newPosts.length === 0) {
+          await job.log(`Dedup: all posts for @${username} already delivered — skipping`);
           jobLog.info('No new posts since last check');
           await updateLastScraped(username);
           return;
