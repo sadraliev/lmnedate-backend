@@ -13,3 +13,15 @@ export {
 } from './parser.js';
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
+export {
+  connectToDatabase,
+  getDatabase,
+  closeDatabaseConnection,
+} from './database/connection.js';
+export type { Account } from './database/account.types.js';
+export {
+  ensureAccountIndexes,
+  findOrCreateAccount,
+  findAccountByUsername,
+  updateLastScraped,
+} from './database/account.repository.js';
