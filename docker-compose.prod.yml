@@ -1,0 +1,75 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: fastify-app-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    container_name: fastify-app-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ping:1})", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    image: ${ECR_BOT_REPOSITORY_URL}:latest
+    container_name: fastify-app-bot
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    command: ["pnpm", "--filter", "@app/bot", "dev:bot"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  deliver:
+    image: ${ECR_BOT_REPOSITORY_URL}:latest
+    container_name: fastify-app-deliver
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    command: ["pnpm", "--filter", "@app/bot", "dev:deliver"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  scraper:
+    image: ${ECR_SCRAPER_REPOSITORY_URL}:latest
+    container_name: fastify-app-scraper
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      SCRAPE_CONCURRENCY: "1"
+      SCRAPE_TIMEOUT_MS: "30000"
+      INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
+      INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD}
+    command: ["pnpm", "--filter", "@app/scraper", "dev"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+
+volumes:
+  redis_data:
+    driver: local
+  mongo_data:
+    driver: local
