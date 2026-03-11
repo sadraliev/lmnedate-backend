@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  install:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,34 +27,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - uses: actions/cache/save@v4
-        with:
-          path: node_modules
-          key: modules-${{ hashFiles('pnpm-lock.yaml') }}
-
-  lint:
-    needs: install
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: modules-${{ hashFiles('pnpm-lock.yaml') }}
-
       - run: pnpm -r lint
 
   test:
-    needs: install
     runs-on: ubuntu-latest
     services:
       redis:
@@ -76,16 +51,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
-      - uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: modules-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm -r test
 
   build:
-    needs: install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,10 +69,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
-      - uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: modules-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm -r build
