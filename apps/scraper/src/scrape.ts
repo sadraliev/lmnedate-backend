@@ -157,6 +157,7 @@ const enrichPostsWithApi = async (
       post.hashtags = e.hashtags;
       post.mentions = e.mentions;
       post.location = e.location;
+      if (e.timestamp.getTime() > 0) post.timestamp = e.timestamp;
       if (e.caption) post.caption = e.caption;
       if (e.mediaUrl) post.mediaUrl = e.mediaUrl;
       if (e.mediaType) post.mediaType = e.mediaType;
@@ -227,6 +228,7 @@ const enrichLatestPostViaPage = async (
         post.hashtags = e.hashtags;
         post.mentions = e.mentions;
         post.location = e.location;
+        if (e.timestamp.getTime() > 0) post.timestamp = e.timestamp;
         if (e.caption) post.caption = e.caption;
         if (e.mediaUrl) post.mediaUrl = e.mediaUrl;
         if (e.mediaType) post.mediaType = e.mediaType;
@@ -365,6 +367,9 @@ export const scrapeProfile = async (
     if (posts.length > 0 && posts[0].likesCount === undefined) {
       await enrichLatestPostViaPage(posts[0], page, username);
     }
+
+    // Sort by timestamp descending so the latest post is first, not the pinned one
+    posts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
     return posts.slice(0, 12);
   } finally {
