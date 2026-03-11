@@ -1,4 +1,5 @@
-import type { ScrapedPost } from './post-types.js';
+import type { ScrapedPost, CarouselMediaItem } from './post-types.js';
+import { extractHashtags, extractMentions } from './caption-utils.js';
 
 /**
  * Extract posts from a JSON response (GraphQL or API v1)
@@ -91,15 +92,47 @@ export const parseGraphQLNode = (
   if (node.is_video) mediaType = 'video';
   else if (node.edge_sidecar_to_children) mediaType = 'carousel';
 
+  const truncatedCaption = caption?.substring(0, 1000);
+
+  // Analytics
+  const likeEdge = (node.edge_media_preview_like || node.edge_liked_by) as
+    | { count?: number }
+    | undefined;
+  const commentEdge = node.edge_media_to_comment as { count?: number } | undefined;
+
+  // Carousel children
+  const sidecar = node.edge_sidecar_to_children as
+    | { edges: Array<{ node: Record<string, unknown> }> }
+    | undefined;
+  let carouselMedia: CarouselMediaItem[] | undefined;
+  if (sidecar?.edges) {
+    carouselMedia = sidecar.edges.map((e) => ({
+      mediaUrl: (e.node.display_url || e.node.thumbnail_src) as string,
+      mediaType: (e.node.is_video ? 'video' : 'image') as 'image' | 'video',
+      videoUrl: e.node.video_url as string | undefined,
+    }));
+  }
+
+  // Location
+  const loc = node.location as { name?: string } | undefined;
+
   return {
     instagramUsername: username,
     postId: id,
-    caption: caption?.substring(0, 1000),
+    caption: truncatedCaption,
     mediaUrl: (node.display_url || node.thumbnail_src) as string,
     mediaType,
     permalink: `https://www.instagram.com/p/${shortcode}/`,
     timestamp: new Date(((node.taken_at_timestamp as number) || 0) * 1000),
     createdAt: new Date(),
+    likesCount: likeEdge?.count,
+    commentsCount: commentEdge?.count,
+    videoViewsCount: node.video_view_count as number | undefined,
+    videoUrl: node.video_url as string | undefined,
+    carouselMedia,
+    hashtags: extractHashtags(truncatedCaption),
+    mentions: extractMentions(truncatedCaption),
+    location: loc?.name,
   };
 };
 
@@ -128,15 +161,49 @@ export const parseApiV1Item = (
   if (mt === 2) mediaType = 'video';
   else if (mt === 8) mediaType = 'carousel';
 
+  const truncatedCaption = caption?.text?.substring(0, 1000);
+
+  // Video URL
+  const videoVersions = item.video_versions as Array<{ url: string }> | undefined;
+  const videoUrl = videoVersions?.[0]?.url;
+
+  // Carousel children
+  const carouselItems = item.carousel_media as Array<Record<string, unknown>> | undefined;
+  let carouselMedia: CarouselMediaItem[] | undefined;
+  if (carouselItems) {
+    carouselMedia = carouselItems.map((child) => {
+      const childImages = child.image_versions2 as
+        | { candidates?: Array<{ url: string }> }
+        | undefined;
+      const childVideoVersions = child.video_versions as Array<{ url: string }> | undefined;
+      return {
+        mediaUrl: childImages?.candidates?.[0]?.url || '',
+        mediaType: ((child.media_type as number) === 2 ? 'video' : 'image') as 'image' | 'video',
+        videoUrl: childVideoVersions?.[0]?.url,
+      };
+    });
+  }
+
+  // Location
+  const loc = item.location as { name?: string } | undefined;
+
   return {
     instagramUsername: username,
     postId: String(id),
-    caption: caption?.text?.substring(0, 1000),
+    caption: truncatedCaption,
     mediaUrl,
     mediaType,
     permalink: `https://www.instagram.com/p/${code}/`,
     timestamp: new Date(((item.taken_at as number) || 0) * 1000),
     createdAt: new Date(),
+    likesCount: item.like_count as number | undefined,
+    commentsCount: item.comment_count as number | undefined,
+    videoViewsCount: (item.view_count ?? item.play_count) as number | undefined,
+    videoUrl,
+    carouselMedia,
+    hashtags: extractHashtags(truncatedCaption),
+    mentions: extractMentions(truncatedCaption),
+    location: loc?.name,
   };
 };
 

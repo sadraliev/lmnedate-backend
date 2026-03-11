@@ -2,7 +2,7 @@
  * Instagram scraping logic: browser lifecycle + profile scraping.
  */
 
-import { chromium, type Browser, type BrowserContext } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Redis } from 'ioredis';
 import type { ScrapedPost } from './types.js';
 import { extractPosts, extractPostsFromHtml } from './parser.js';
@@ -78,6 +78,92 @@ export const refreshSession = async (
   const state = await loginWithPlaywright(b, igUsername, igPassword);
   await saveSession(redis, igUsername, state);
   cachedStorageState = state;
+};
+
+/**
+ * Enrich posts missing engagement data via Instagram's mobile feed API.
+ * Two steps: resolve username → user_id, then fetch the feed.
+ * Runs fetch inside the browser context to inherit cookies + TLS fingerprint.
+ * Best-effort — on failure, posts keep their existing data.
+ */
+const enrichPostsWithApi = async (
+  posts: ScrapedPost[],
+  page: Page,
+  username: string,
+): Promise<void> => {
+  const unenriched = posts.filter((p) => p.likesCount === undefined);
+  if (unenriched.length === 0) return;
+
+  console.log(`[scraper] Enriching ${unenriched.length} posts via mobile feed API...`);
+
+  try {
+    // Step 1: resolve username → user_id
+    const userId = await page.evaluate(async (user: string) => {
+      const res = await fetch(
+        `https://i.instagram.com/api/v1/users/web_profile_info/?username=${user}`,
+        { credentials: 'include', headers: { 'X-IG-App-ID': '936619743392459' } },
+      );
+      if (!res.ok) return null;
+      const json = (await res.json()) as { data?: { user?: { id?: string } } };
+      return json?.data?.user?.id ?? null;
+    }, username);
+
+    if (!userId) {
+      console.log('[scraper] Could not resolve user_id — skipping enrichment');
+      return;
+    }
+
+    // Step 2: fetch feed (single API call returns all posts)
+    const feedJson = await page.evaluate(async (uid: string) => {
+      const res = await fetch(
+        `https://i.instagram.com/api/v1/feed/user/${uid}/?count=12`,
+        { credentials: 'include', headers: { 'X-IG-App-ID': '936619743392459' } },
+      );
+      if (!res.ok) return null;
+      return res.json();
+    }, userId);
+
+    if (!feedJson) {
+      console.log('[scraper] Feed API returned non-200 — skipping enrichment');
+      return;
+    }
+
+    // Parse feed items into enriched posts
+    const enrichedPosts: ScrapedPost[] = [];
+    extractPosts(feedJson, username, enrichedPosts);
+
+    // Build a lookup by postId (shortcode) for fast matching
+    const enrichedByCode = new Map<string, ScrapedPost>();
+    for (const ep of enrichedPosts) {
+      // Feed items use numeric pk as postId, but DOM posts use shortcode.
+      // Match by permalink shortcode instead.
+      const match = ep.permalink.match(/\/(p|reel)\/([^/]+)/);
+      if (match) enrichedByCode.set(match[2], ep);
+    }
+
+    let count = 0;
+    for (const post of unenriched) {
+      const e = enrichedByCode.get(post.postId);
+      if (!e) continue;
+
+      post.likesCount = e.likesCount;
+      post.commentsCount = e.commentsCount;
+      post.videoViewsCount = e.videoViewsCount;
+      post.videoUrl = e.videoUrl;
+      post.carouselMedia = e.carouselMedia;
+      post.hashtags = e.hashtags;
+      post.mentions = e.mentions;
+      post.location = e.location;
+      if (e.caption) post.caption = e.caption;
+      if (e.mediaUrl) post.mediaUrl = e.mediaUrl;
+      if (e.mediaType) post.mediaType = e.mediaType;
+      count++;
+    }
+
+    console.log(`[scraper] Enriched ${count}/${unenriched.length} posts`);
+  } catch (err) {
+    console.log(`[scraper] Enrichment failed: ${err instanceof Error ? err.message : err}`);
+  }
 };
 
 /**
@@ -196,6 +282,9 @@ export const scrapeProfile = async (
       }
       console.log(`[scraper] DOM extraction found ${domPosts.length} posts for @${username}`);
     }
+
+    // Enrich posts that are missing engagement data
+    await enrichPostsWithApi(posts, page, username);
 
     return posts.slice(0, 12);
   } finally {
