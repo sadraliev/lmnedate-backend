@@ -2,17 +2,12 @@ import { createServer } from './server.js';
 import { connectToDatabase, closeDatabaseConnection } from './database/connection.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
-import { createBot } from './modules/telegram/telegram.bot.js';
 import { ensureIndexes } from './modules/telegram/telegram.service.js';
-import type { Bot } from 'grammy';
-
 
 /**
  * Main application entry point
  */
 const start = async () => {
-  let bot: Bot | undefined;
-
   try {
     // Connect to MongoDB
     await connectToDatabase();
@@ -28,31 +23,14 @@ const start = async () => {
       host: '0.0.0.0',
     });
 
-    logger.info(`🚀 Server listening on port ${env.PORT}`);
-
-    // Start Telegram bot (long-polling)
-    if (env.TELEGRAM_BOT_TOKEN) {
-      bot = createBot(env.TELEGRAM_BOT_TOKEN);
-      bot.start({
-        onStart: () => logger.info('🤖 Telegram bot started'),
-      });
-    } else {
-      logger.warn('TELEGRAM_BOT_TOKEN not set, bot disabled');
-    }
+    logger.info({ port: env.PORT }, 'Server listening');
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
-      logger.info(`${signal} received, shutting down gracefully`);
-
-      if (bot) {
-        await bot.stop();
-        logger.info('Telegram bot stopped');
-      }
-
+      logger.info({ signal }, 'Shutting down');
       await app.close();
       await closeDatabaseConnection();
-
-      logger.info('✅ Shutdown complete');
+      logger.info('Shutdown complete');
       process.exit(0);
     };
 

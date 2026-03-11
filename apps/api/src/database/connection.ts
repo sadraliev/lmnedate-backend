@@ -19,7 +19,7 @@ export const connectToDatabase = async (): Promise<Db> => {
       ? env.MONGODB_URI_TEST
       : env.MONGODB_URI;
 
-    client = new MongoClient(uri);
+    client = new MongoClient(uri, { serverSelectionTimeoutMS: 5_000 });
     await client.connect();
 
     db = client.db();

@@ -1,4 +1,18 @@
 services:
+  mongodb:
+    image: mongo:7
+    container_name: fastify-app-mongodb
+    restart: unless-stopped
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: fastify-app-redis
@@ -92,5 +106,7 @@ services:
       retries: 3
 
 volumes:
+  mongo_data:
+    driver: local
   redis_data:
     driver: local
