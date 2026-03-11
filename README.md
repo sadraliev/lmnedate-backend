@@ -1,146 +1,164 @@
-# Fastify Template
+# Postergeist
 
-Production-ready Fastify API starter template with authentication, MongoDB, Redis, and BullMQ.
+Instagram scraper with Telegram delivery. Monitors public profiles, extracts posts via Playwright, and delivers them to Telegram chats through BullMQ job queues.
 
 ## Features
 
-- **Auth module** — register, login, JWT access/refresh tokens with rotation, password reset, email verification, account lockout
-- **MongoDB** — connection management with graceful shutdown
-- **Redis + BullMQ** — job queue infrastructure with workers
-- **Swagger UI** — auto-generated API docs at `/docs`
-- **Zod validation** — request schema validation with type inference
-- **Rate limiting** — global and per-route configuration
-- **Modular architecture** — plug-and-play module system
-- **Testing** — unit tests (Vitest + mongodb-memory-server) and E2E tests
+- **Telegram bot** — `/update <username>` triggers scraping and delivers the latest post
+- **Instagram scraper** — Playwright-based with session management, login wall detection, and DOM/API fallbacks
+- **Post enrichment** — engagement data (likes, comments, views) via mobile feed API + page navigation fallback
+- **Job queues** — BullMQ for scrape and deliver pipelines with retry/backoff
+- **REST API** — Fastify dashboard with auth, Swagger docs, rate limiting
+- **Structured logging** — centralized pino logger with JSON in production, pretty-printed in dev, and daily-rotated log files
+- **Testing** — unit tests (Vitest) and E2E tests
 
 ## Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/sadraliev/fastify-template.git
-cd fastify-template
-make setup
+# Install dependencies
+pnpm install
 
-# Start infrastructure
+# Start infrastructure (Redis, Bull Board)
 make up
 
-# Run dev server
-make dev
-```
+# Copy and configure environment
+cp .env.example .env
 
-The API will be available at `http://localhost:3000` and Swagger docs at `http://localhost:3000/docs`.
+# Run all services
+make dev
+
+# Or individually in separate terminals
+make dev-bot        # Telegram bot
+make dev-deliver    # Deliver worker
+make dev-scraper    # Scraper worker
+make dev-api        # API server
+```
 
 ## Project Structure
 
 ```
-src/
-├── core/                    # Module registration system
-│   └── app.ts
-├── modules/                 # Feature modules
-│   └── auth/
-│       ├── auth.module.ts   # Module definition
-│       ├── auth.routes.ts   # Route handlers
-│       ├── auth.service.ts  # Business logic
-│       ├── auth.schemas.ts  # Zod validation schemas
-│       ├── auth.types.ts    # TypeScript types
-│       └── __tests__/       # Unit tests
-├── shared/
-│   ├── config/              # Environment, logger, Redis config
-│   ├── database/            # MongoDB connection
-│   ├── jobs/                # BullMQ worker infrastructure
-│   ├── testing/             # Test setup and fixtures
-│   ├── types/               # Shared type definitions
-│   └── utils/               # Crypto, time, validation helpers
-├── server.ts                # Fastify app factory
-└── index.ts                 # Entry point
-tests/
-└── e2e/                     # End-to-end tests
-```
+packages/shared/              # @app/shared — zero-dep shared library
+├── src/
+│   ├── logger.ts             # createLogger factory (pino)
+│   ├── redis.ts              # Redis connection with retry
+│   ├── queue-names.ts        # BullMQ queue name constants
+│   ├── job-types.ts          # ScrapeJobData, DeliverJobData
+│   ├── post-types.ts         # ScrapedPost, CarouselMediaItem
+│   ├── parser.ts             # Instagram JSON/HTML post extraction
+│   └── caption-utils.ts      # Hashtag/mention extraction
 
-## API Endpoints
+apps/bot/                     # @app/bot — Telegram bot + deliver worker
+├── src/
+│   ├── bot.ts                # Grammy long-polling (/start, /update)
+│   ├── deliver.ts            # BullMQ consumer → Telegram messages
+│   └── bot-instance.ts       # Shared Grammy bot instance
 
-| Method | Path                   | Description                     |
-|--------|------------------------|---------------------------------|
-| POST   | `/auth/register`       | Register a new user             |
-| POST   | `/auth/login`          | Login and receive tokens        |
-| GET    | `/auth/me`             | Get current user profile        |
-| POST   | `/auth/refresh`        | Refresh access token (rotation) |
-| POST   | `/auth/logout`         | Revoke refresh token            |
-| POST   | `/auth/password/forgot`| Request password reset          |
-| POST   | `/auth/password/reset` | Reset password with token       |
-| POST   | `/auth/email/confirm`  | Confirm email address           |
-| GET    | `/health`              | Health check                    |
+apps/scraper/                 # @app/scraper — Playwright scraper
+├── src/
+│   ├── worker.ts             # BullMQ consumer, job processing
+│   ├── scrape.ts             # Browser lifecycle, profile scraping, enrichment
+│   ├── session.ts            # Instagram login + Redis session persistence
+│   └── parser.ts             # Post extraction (re-exports from shared)
 
-## Adding a New Module
+apps/api/                     # @app/api — Fastify REST API
+├── src/
+│   ├── server.ts             # Fastify app factory
+│   ├── modules/auth/         # Auth module (register, login, JWT, password reset)
+│   ├── modules/telegram/     # Telegram module (bot management)
+│   └── config/               # Environment, logger, Redis config
 
-1. Create `src/modules/your-module/`:
-
-```typescript
-// your-module.module.ts
-import type { Module } from '../../core/app.js';
-import { registerYourRoutes } from './your-module.routes.js';
-
-export const yourModule: Module = {
-  name: 'your-module',
-  tag: { name: 'YourModule', description: 'Your module description' },
-  routes: registerYourRoutes,
-};
-```
-
-2. Register it in `src/server.ts`:
-
-```typescript
-import { yourModule } from './modules/your-module/your-module.module.js';
-
-const modules: Module[] = [authModule, yourModule];
+scripts/                      # Utility scripts (not production code)
 ```
 
 ## Scripts
 
 ```bash
-make dev          # Dev server with hot reload
-make build        # Build TypeScript
-make start        # Run production build
-make lint         # Type-check
-make up           # Start Docker containers (MongoDB, Redis, Bull Board)
-make down         # Stop containers
-make db-shell     # Open MongoDB shell
-make redis-cli    # Open Redis CLI
+# Development
+make dev              # Run all services concurrently
+make dev-api          # API server with hot reload
+make dev-bot          # Telegram bot
+make dev-deliver      # Deliver worker
+make dev-scraper      # Scraper worker
+
+# Build & Quality
+make build            # Build all packages
+make lint             # Type-check all packages
+make test             # Run all tests
+
+# Docker
+make up               # Start Redis + Bull Board
+make down             # Stop containers
+make redis-cli        # Open Redis CLI
+make bull-board       # Open Bull Board in browser
 ```
 
 ## Testing
 
 ```bash
-npm test              # Unit tests
-npm run test:watch    # Watch mode
-npm run test:e2e      # E2E tests (requires Docker containers running)
-npm run test:coverage # Coverage report
+pnpm -r test              # All tests
+pnpm -r lint              # Type-check all packages
 ```
 
 ## Environment Variables
 
 Copy `.env.example` to `.env` and configure:
 
-| Variable           | Description                | Default                                    |
-|--------------------|----------------------------|--------------------------------------------|
-| `PORT`             | Server port                | `3000`                                     |
-| `NODE_ENV`         | Environment                | `development`                              |
-| `JWT_SECRET`       | JWT signing secret (32+)   | —                                          |
-| `JWT_ACCESS_EXPIRY`| Access token TTL           | `15m`                                      |
-| `JWT_REFRESH_EXPIRY`| Refresh token TTL         | `7d`                                       |
-| `MONGODB_URI`      | MongoDB connection string  | `mongodb://localhost:27019/fastify-app`     |
-| `MONGODB_URI_TEST` | Test database URI          | `mongodb://localhost:27019/fastify-app-e2e-test` |
-| `REDIS_URL`        | Redis connection string    | `redis://localhost:6381`                   |
+| Variable              | Description                 | Default                        |
+|-----------------------|-----------------------------|--------------------------------|
+| `PORT`                | API server port             | `3000`                         |
+| `NODE_ENV`            | Environment                 | `development`                  |
+| `JWT_SECRET`          | JWT signing secret (32+)    | —                              |
+| `MONGODB_URI`         | MongoDB connection string   | `mongodb://localhost:27019/fastify-app` |
+| `REDIS_URL`           | Redis connection string     | `redis://localhost:6381`       |
+| `TELEGRAM_BOT_TOKEN`  | Telegram bot API token      | —                              |
+| `INSTAGRAM_USERNAME`  | Instagram login username    | —                              |
+| `INSTAGRAM_PASSWORD`  | Instagram login password    | —                              |
+| `LOG_LEVEL`           | Log level override          | `debug` (dev), `info` (prod)   |
+
+## Logging
+
+All apps use a shared pino logger from `@app/shared`:
+
+```typescript
+import { createLogger } from '@app/shared';
+
+const logger = createLogger({ name: 'my-service' });
+logger.info({ userId: 123 }, 'User logged in');
+```
+
+**Dev mode** — pretty-printed to stdout + daily-rotated JSON files in `logs/`:
+
+```
+logs/
+├── bot.2026-03-11.1.log
+├── scraper.2026-03-11.1.log
+├── deliver.2026-03-11.1.log
+└── api.2026-03-11.1.log
+```
+
+- Files rotate daily, 7-day retention
+- `logs/` is gitignored
+
+**Production** — JSON to stdout only (consumed by Docker/CloudWatch/etc.)
+
+Override the log level with `LOG_LEVEL`:
+
+```bash
+LOG_LEVEL=warn pnpm dev:bot
+```
 
 ## Tech Stack
 
 - [Fastify](https://fastify.dev/) — web framework
-- [TypeScript](https://www.typescriptlang.org/) — language
+- [Grammy](https://grammy.dev/) — Telegram bot framework
+- [Playwright](https://playwright.dev/) — browser automation
+- [BullMQ](https://bullmq.io/) — job queues
+- [Pino](https://getpino.io/) — structured logging
 - [MongoDB](https://www.mongodb.com/) — database
-- [Redis](https://redis.io/) + [BullMQ](https://bullmq.io/) — job queues
+- [Redis](https://redis.io/) — session storage + queue backend
 - [Zod](https://zod.dev/) — schema validation
 - [Vitest](https://vitest.dev/) — testing
-- [Pino](https://getpino.io/) — logging
+- [TypeScript](https://www.typescriptlang.org/) — language
 
 ## License
 

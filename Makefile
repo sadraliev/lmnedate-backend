@@ -29,6 +29,10 @@ setup: install ## Initial setup (install + create .env)
 	fi
 
 # Development
+dev: ## Run all services concurrently
+	@pnpm exec concurrently -n bot,deliver,scraper,api -c blue,magenta,cyan,green \
+		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scraper" "pnpm dev:api"
+
 dev-api: ## Run API server (Fastify)
 	@pnpm dev:api
 
