@@ -5,7 +5,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Redis } from 'ioredis';
 import type { ScrapedPost } from './types.js';
-import { extractPosts, extractPostsFromHtml } from './parser.js';
+import { extractPosts, extractPostsFromHtml, findNestedValue } from './parser.js';
 import { loadSession, saveSession, loginWithPlaywright } from './session.js';
 
 let browser: Browser | null = null;
@@ -167,6 +167,78 @@ const enrichPostsWithApi = async (
 };
 
 /**
+ * Fallback: enrich the latest post by navigating the existing page to the post
+ * URL and extracting embedded JSON from the HTML. Instagram embeds post data as
+ * API v1 items under `xdt_api__v1__media__shortcode__web_info` in script tags.
+ * Reuses the same page to preserve session cookies and browser state.
+ */
+const enrichLatestPostViaPage = async (
+  post: ScrapedPost,
+  page: Page,
+  username: string,
+): Promise<void> => {
+  console.log(`[scraper] Enriching latest post ${post.postId} via page navigation...`);
+
+  try {
+    await page.goto(post.permalink, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    });
+
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+
+    // Extract embedded post data from the raw HTML.
+    // Instagram embeds API v1 data in <script type="application/json"> tags
+    // under the key xdt_api__v1__media__shortcode__web_info.
+    const html = await page.content();
+    const scriptRegex = /<script type="application\/json"[^>]*>([\s\S]*?)<\/script>/g;
+    let embeddedJson: unknown = null;
+    let scriptMatch: RegExpExecArray | null;
+
+    while ((scriptMatch = scriptRegex.exec(html)) !== null) {
+      const text = scriptMatch[1];
+      if (!text.includes('xdt_api__v1__media__shortcode__web_info') || !text.includes(post.postId)) continue;
+      try {
+        const parsed = JSON.parse(text);
+        const webInfo = findNestedValue(parsed, 'xdt_api__v1__media__shortcode__web_info');
+        if (webInfo) {
+          embeddedJson = webInfo;
+          break;
+        }
+      } catch {
+        // JSON parse error — skip
+      }
+    }
+
+    if (embeddedJson) {
+      const parsed: ScrapedPost[] = [];
+      extractPosts(embeddedJson, username, parsed);
+
+      if (parsed.length > 0) {
+        const e = parsed[0];
+        post.likesCount = e.likesCount;
+        post.commentsCount = e.commentsCount;
+        post.videoViewsCount = e.videoViewsCount;
+        post.videoUrl = e.videoUrl;
+        post.carouselMedia = e.carouselMedia;
+        post.hashtags = e.hashtags;
+        post.mentions = e.mentions;
+        post.location = e.location;
+        if (e.caption) post.caption = e.caption;
+        if (e.mediaUrl) post.mediaUrl = e.mediaUrl;
+        if (e.mediaType) post.mediaType = e.mediaType;
+        console.log(`[scraper] Latest post enriched via page navigation`);
+        return;
+      }
+    }
+
+    console.log(`[scraper] No embedded post data found for ${post.postId}`);
+  } catch (err) {
+    console.log(`[scraper] Page enrichment failed: ${err instanceof Error ? err.message : err}`);
+  }
+};
+
+/**
  * Scrape an Instagram profile for recent posts
  */
 export const scrapeProfile = async (
@@ -285,6 +357,11 @@ export const scrapeProfile = async (
 
     // Enrich posts that are missing engagement data
     await enrichPostsWithApi(posts, page, username);
+
+    // Fallback: if the latest post is still unenriched, navigate to its page
+    if (posts.length > 0 && posts[0].likesCount === undefined) {
+      await enrichLatestPostViaPage(posts[0], page, username);
+    }
 
     return posts.slice(0, 12);
   } finally {
