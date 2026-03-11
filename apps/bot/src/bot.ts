@@ -72,8 +72,9 @@ bot.catch((err) => {
 // Start
 // ---------------------------------------------------------------------------
 const main = async () => {
+  const me = await bot.api.getMe();
   bot.start();
-  logger.info('Telegram bot started');
+  logger.info({ botName: `@${me.username}` }, 'Telegram bot started');
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
