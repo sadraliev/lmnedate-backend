@@ -26,7 +26,7 @@ const redisConnection = createRedisConnection(REDIS_URL, 'deliver', logger);
 const worker = new Worker<DeliverJobData>(
   QUEUE_NAMES.INSTAGRAM_DELIVER,
   async (job: Job<DeliverJobData>) => {
-    const { chatId, post, error } = job.data;
+    const { chatId, enqueuedAt, post, error } = job.data;
     const jobLog = logger.child({ jobId: job.id, chatId });
 
     // Handle error/notification messages
@@ -43,10 +43,20 @@ const worker = new Worker<DeliverJobData>(
 
     jobLog.info({ username: post.instagramUsername }, 'Delivering post');
 
+    let processingTime = '';
+    if (enqueuedAt) {
+      const ms = Date.now() - new Date(enqueuedAt).getTime();
+      const secs = Math.round(ms / 1000);
+      processingTime = secs >= 60
+        ? `\n\n⏱ ${Math.floor(secs / 60)}m ${secs % 60}s`
+        : `\n\n⏱ ${secs}s`;
+    }
+
     const caption =
       `<b>@${post.instagramUsername}</b>\n\n` +
       (post.caption ? `${post.caption.substring(0, 800)}\n\n` : '') +
-      `<a href="${post.permalink}">View on Instagram</a>`;
+      `<a href="${post.permalink}">View on Instagram</a>` +
+      processingTime;
 
     const sendText = () => bot.api.sendMessage(chatId, caption, { parse_mode: 'HTML' });
 

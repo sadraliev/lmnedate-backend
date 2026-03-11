@@ -8,6 +8,7 @@ import type { CarouselMediaItem } from './post-types.js';
 
 export interface DeliverJobData {
   chatId: number;
+  enqueuedAt?: string;
   post?: {
     instagramUsername: string;
     caption?: string;

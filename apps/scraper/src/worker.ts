@@ -90,6 +90,7 @@ const main = async () => {
           `deliver-${username}-${Date.now()}`,
           {
             chatId,
+            enqueuedAt: job.data.enqueuedAt,
             post: {
               instagramUsername: latestPost.instagramUsername,
               caption: latestPost.caption,
