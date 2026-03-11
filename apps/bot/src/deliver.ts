@@ -8,7 +8,8 @@
 import { Worker } from 'bullmq';
 import type { Job } from 'bullmq';
 import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
-import type { DeliverJobData } from '@app/shared';
+import type { DeliverJobData, CarouselMediaItem } from '@app/shared';
+import type { InputMediaPhoto, InputMediaVideo } from 'grammy/types';
 import { bot } from './bot-instance.js';
 
 const logger = createLogger({ name: 'deliver' });
@@ -47,20 +48,45 @@ const worker = new Worker<DeliverJobData>(
       (post.caption ? `${post.caption.substring(0, 800)}\n\n` : '') +
       `<a href="${post.permalink}">View on Instagram</a>`;
 
+    const sendText = () => bot.api.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+
     const send = async () => {
       // NOTE: link_preview_options with Instagram URLs triggers aggressive Telegram
       // rate limiting (429). Sending plain HTML text works reliably.
-      if (post.mediaType === 'video') {
-        await bot.api.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+      if (post.mediaType === 'carousel' && post.carouselMedia?.length) {
+        try {
+          const media = post.carouselMedia.map((item: CarouselMediaItem, i: number) => {
+            const base = i === 0 ? { caption, parse_mode: 'HTML' as const } : {};
+            if (item.mediaType === 'video' && item.videoUrl) {
+              return { type: 'video' as const, media: item.videoUrl, ...base } satisfies InputMediaVideo;
+            }
+            return { type: 'photo' as const, media: item.mediaUrl, ...base } satisfies InputMediaPhoto;
+          });
+          await bot.api.sendMediaGroup(chatId, media);
+        } catch (err) {
+          jobLog.warn({ err }, 'sendMediaGroup failed, falling back to single photo');
+          try {
+            await bot.api.sendPhoto(chatId, post.mediaUrl, { caption, parse_mode: 'HTML' });
+          } catch {
+            await sendText();
+          }
+        }
+      } else if (post.mediaType === 'video') {
+        if (post.videoUrl) {
+          try {
+            await bot.api.sendVideo(chatId, post.videoUrl, { caption, parse_mode: 'HTML' });
+          } catch (err) {
+            jobLog.warn({ err }, 'sendVideo failed, falling back to text');
+            await sendText();
+          }
+        } else {
+          await sendText();
+        }
       } else {
         try {
-          await bot.api.sendPhoto(chatId, post.mediaUrl, {
-            caption,
-            parse_mode: 'HTML',
-          });
+          await bot.api.sendPhoto(chatId, post.mediaUrl, { caption, parse_mode: 'HTML' });
         } catch {
-          // Fallback to text message if photo sending fails (e.g., URL expired)
-          await bot.api.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+          await sendText();
         }
       }
     };

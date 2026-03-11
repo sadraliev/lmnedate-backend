@@ -4,6 +4,8 @@ export interface ScrapeJobData {
   enqueuedAt: string;
 }
 
+import type { CarouselMediaItem } from './post-types.js';
+
 export interface DeliverJobData {
   chatId: number;
   post?: {
@@ -12,6 +14,8 @@ export interface DeliverJobData {
     mediaUrl: string;
     mediaType: 'image' | 'video' | 'carousel';
     permalink: string;
+    videoUrl?: string;
+    carouselMedia?: CarouselMediaItem[];
   };
   error?: string;
 }

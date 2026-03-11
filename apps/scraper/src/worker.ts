@@ -96,6 +96,8 @@ const main = async () => {
               mediaUrl: latestPost.mediaUrl,
               mediaType: latestPost.mediaType,
               permalink: latestPost.permalink,
+              videoUrl: latestPost.videoUrl,
+              carouselMedia: latestPost.carouselMedia,
             },
           },
           {
