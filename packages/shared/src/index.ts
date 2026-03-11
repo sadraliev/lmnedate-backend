@@ -18,10 +18,11 @@ export {
   getDatabase,
   closeDatabaseConnection,
 } from './database/connection.js';
-export type { Account } from './database/account.types.js';
+export type { Account, AccountStatus } from './database/account.types.js';
 export {
   ensureAccountIndexes,
   findOrCreateAccount,
   findAccountByUsername,
   updateLastScraped,
+  updateAccountStatus,
 } from './database/account.repository.js';

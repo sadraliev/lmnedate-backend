@@ -1,6 +1,6 @@
 import type { Collection } from 'mongodb';
 import { getDatabase } from './connection.js';
-import type { Account } from './account.types.js';
+import type { Account, AccountStatus } from './account.types.js';
 
 const COLLECTION = 'accounts';
 
@@ -22,7 +22,7 @@ export const findOrCreateAccount = async (
   const result = await getCollection().findOneAndUpdate(
     { instagramUsername },
     {
-      $setOnInsert: { instagramUsername, addedBy: chatId, createdAt: now },
+      $setOnInsert: { instagramUsername, addedBy: chatId, status: 'scrapeable' as AccountStatus, createdAt: now },
       $set: { updatedAt: now },
     },
     { upsert: true, returnDocument: 'after' },
@@ -44,5 +44,16 @@ export const updateLastScraped = async (
   await getCollection().updateOne(
     { instagramUsername },
     { $set: { lastScrapedAt: now, updatedAt: now } },
+  );
+};
+
+export const updateAccountStatus = async (
+  instagramUsername: string,
+  status: AccountStatus,
+): Promise<void> => {
+  const now = new Date();
+  await getCollection().updateOne(
+    { instagramUsername },
+    { $set: { status, updatedAt: now } },
   );
 };
