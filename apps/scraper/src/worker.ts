@@ -1,7 +1,8 @@
 /**
  * Docker entry point for the Instagram scraper worker.
  *
- * PoC: no MongoDB, sessions in Redis, scrape → deliver queue with post data.
+ * All jobs are scheduled: scrape → store posts → deliver only NEW posts
+ * to all subscribers → update account lastPostId.
  */
 
 import dotenv from 'dotenv';
@@ -12,7 +13,20 @@ dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../..
 import { Worker, Queue } from 'bullmq';
 import type { Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
+import {
+  QUEUE_NAMES,
+  createRedisConnection,
+  createLogger,
+  connectToDatabase,
+  closeDatabaseConnection,
+  ensurePostIndexes,
+  storeNewPosts,
+  getNewPostsSince,
+  getSubscribersByAccount,
+  findAccountByUsername,
+  updateLastScraped,
+  updateAccountLastPostId,
+} from '@app/shared';
 import type { ScrapeJobData, DeliverJobData } from '@app/shared';
 import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.js';
 
@@ -22,6 +36,7 @@ const logger = createLogger({ name: 'scraper' });
 // Config from environment (no env.ts dependency)
 // ---------------------------------------------------------------------------
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27019/instagram-scraper';
 const SCRAPE_CONCURRENCY = parseInt(process.env.SCRAPE_CONCURRENCY ?? '1', 10);
 const SCRAPE_TIMEOUT_MS = parseInt(process.env.SCRAPE_TIMEOUT_MS ?? '30000', 10);
 const INSTAGRAM_USERNAME = process.env.INSTAGRAM_USERNAME ?? '';
@@ -54,6 +69,11 @@ const main = async () => {
   connectRedis();
   await initSession(redis, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
 
+  // Connect to MongoDB for post dedup
+  await connectToDatabase(MONGODB_URI);
+  await ensurePostIndexes();
+  logger.info('Connected to MongoDB');
+
   const bullmqConnection = createRedisConnection(REDIS_URL, 'scraper-bullmq', logger);
 
   const deliverQueue = new Queue<DeliverJobData>(QUEUE_NAMES.INSTAGRAM_DELIVER, {
@@ -63,8 +83,8 @@ const main = async () => {
   const worker = new Worker<ScrapeJobData>(
     QUEUE_NAMES.INSTAGRAM_SCRAPE,
     async (job: Job<ScrapeJobData>) => {
-      const { username, chatId } = job.data;
-      const jobLog = logger.child({ jobId: job.id, username, chatId });
+      const { username } = job.data;
+      const jobLog = logger.child({ jobId: job.id, username });
       jobLog.info('Processing scrape job');
 
       try {
@@ -76,47 +96,65 @@ const main = async () => {
 
         if (rawPosts.length === 0) {
           jobLog.info('No posts found');
-          await deliverQueue.add(
-            `deliver-${username}-${Date.now()}`,
-            { chatId, error: `No posts found for @${username}. The profile may be private or empty.` },
-            { removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-          );
           return;
         }
 
-        // Take the first (latest) post and enqueue delivery
-        const latestPost = rawPosts[0];
-        await deliverQueue.add(
-          `deliver-${username}-${Date.now()}`,
-          {
-            chatId,
-            enqueuedAt: job.data.enqueuedAt,
-            post: {
-              instagramUsername: latestPost.instagramUsername,
-              caption: latestPost.caption,
-              mediaUrl: latestPost.mediaUrl,
-              mediaType: latestPost.mediaType,
-              permalink: latestPost.permalink,
-              videoUrl: latestPost.videoUrl,
-              carouselMedia: latestPost.carouselMedia,
-            },
-          },
-          {
-            removeOnComplete: { count: 50 },
-            removeOnFail: { count: 100 },
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 30_000 },
-          },
-        );
-        jobLog.info('Enqueued delivery');
+        // Store posts (duplicates are skipped via unique index)
+        const storedPosts = await storeNewPosts(rawPosts);
+        jobLog.info({ stored: storedPosts.length, total: rawPosts.length }, 'Stored posts');
+
+        // Get account's lastPostId for dedup
+        const account = await findAccountByUsername(username);
+        const lastPostId = account?.lastPostId;
+
+        // Find posts newer than account's cursor
+        const newPosts = await getNewPostsSince(username, lastPostId);
+
+        if (newPosts.length === 0) {
+          jobLog.info('No new posts since last check');
+          await updateLastScraped(username);
+          return;
+        }
+
+        // Deliver new posts to ALL subscribers
+        const subscribers = await getSubscribersByAccount(username);
+        jobLog.info({ subscribers: subscribers.length, newPosts: newPosts.length }, 'Delivering');
+
+        for (const sub of subscribers) {
+          for (const post of newPosts) {
+            await deliverQueue.add(
+              `deliver-${username}-${sub.chatId}-${Date.now()}`,
+              {
+                chatId: sub.chatId,
+                enqueuedAt: job.data.enqueuedAt,
+                post: {
+                  instagramUsername: post.instagramUsername,
+                  caption: post.caption,
+                  mediaUrl: post.mediaUrl,
+                  mediaType: post.mediaType,
+                  permalink: post.permalink,
+                  videoUrl: post.videoUrl,
+                  carouselMedia: post.carouselMedia,
+                },
+              },
+              {
+                removeOnComplete: { count: 50 },
+                removeOnFail: { count: 100 },
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 30_000 },
+              },
+            );
+          }
+        }
+
+        // Advance the account cursor to the newest post
+        const newestPost = newPosts[newPosts.length - 1];
+        await updateAccountLastPostId(username, newestPost.postId);
+        await updateLastScraped(username);
+        jobLog.info({ delivered: newPosts.length, to: subscribers.length }, 'Scrape complete');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         jobLog.error({ err: message }, 'Failed to scrape');
-        await deliverQueue.add(
-          `deliver-error-${username}-${Date.now()}`,
-          { chatId, error: `Failed to fetch @${username}: ${message}` },
-          { removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-        );
         throw error;
       }
     },
@@ -142,6 +180,7 @@ const main = async () => {
     await worker.close();
     await deliverQueue.close();
     await closeBrowser();
+    await closeDatabaseConnection();
     await redis.quit();
     process.exit(0);
   };

@@ -2,12 +2,24 @@
  * Process 1: Telegram bot.
  *
  * /start  → welcome message
- * /update <username> → enqueue scrape job with chatId
+ * /update <username> → subscribe to an Instagram account
  */
 
-import { Queue } from 'bullmq';
-import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
-import type { ScrapeJobData } from '@app/shared';
+import dotenv from 'dotenv';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
+
+import {
+  createLogger,
+  connectToDatabase,
+  closeDatabaseConnection,
+  ensureSubscriptionIndexes,
+  ensureAccountIndexes,
+  addSubscription,
+  findOrCreateAccount,
+} from '@app/shared';
 import { bot } from './bot-instance.js';
 
 const logger = createLogger({ name: 'bot' });
@@ -15,18 +27,14 @@ const logger = createLogger({ name: 'bot' });
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const redisConnection = createRedisConnection(REDIS_URL, 'bot', logger);
-
-const scrapeQueue = new Queue<ScrapeJobData>(QUEUE_NAMES.INSTAGRAM_SCRAPE, {
-  connection: redisConnection,
-});
+const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27019/instagram-scraper';
 
 bot.command('start', async (ctx) => {
   logger.info({ chatId: ctx.chat.id }, '/start command received');
   await ctx.reply(
     'Instagram Scraper Bot\n\n' +
-    'Send /update <username> to get the latest post from any public Instagram account.\n\n' +
+    'Send /update <username> to follow a public Instagram account.\n' +
+    'New posts will be delivered automatically.\n\n' +
     'Example: /update bbcnews',
   );
 });
@@ -46,22 +54,27 @@ bot.command('update', async (ctx) => {
 
   const chatId = ctx.chat.id;
 
-  await scrapeQueue.add(
-    `scrape-${username}-${chatId}`,
-    {
-      username,
+  try {
+    // Create subscriber (telegram_users doc)
+    await addSubscription(
       chatId,
-      enqueuedAt: new Date().toISOString(),
-    },
-    {
-      removeOnComplete: { count: 50 },
-      removeOnFail: { count: 10 },
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 10_000 },
-    },
-  );
+      username,
+      ctx.from?.username,
+      ctx.from?.first_name,
+    );
 
-  await ctx.reply(`Fetching latest post from @${username}... This may take up to 30 seconds.`);
+    // Ensure the Instagram account exists for the scheduler
+    await findOrCreateAccount(username, chatId);
+
+    await ctx.reply(
+      `Subscribed to @${username}. New posts will be delivered automatically.`,
+    );
+    logger.info({ chatId, username }, 'Subscription added');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ err: message, chatId, username }, 'Failed to add subscription');
+    await ctx.reply(`Failed to subscribe to @${username}. Please try again later.`);
+  }
 });
 
 bot.catch((err) => {
@@ -72,6 +85,12 @@ bot.catch((err) => {
 // Start
 // ---------------------------------------------------------------------------
 const main = async () => {
+  // Connect to MongoDB
+  await connectToDatabase(MONGODB_URI);
+  await ensureSubscriptionIndexes();
+  await ensureAccountIndexes();
+  logger.info('Connected to MongoDB');
+
   const me = await bot.api.getMe();
   bot.start();
   logger.info({ botName: `@${me.username}` }, 'Telegram bot started');
@@ -80,7 +99,7 @@ const main = async () => {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down');
     await bot.stop();
-    await scrapeQueue.close();
+    await closeDatabaseConnection();
     process.exit(0);
   };
 

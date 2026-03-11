@@ -1,35 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupTestDatabase } from '../../../testing/setup.js';
 import {
-  findOrCreateUser,
   addSubscription,
   removeSubscription,
-  getSubscriptions,
+  getSubscriptionsByUser,
   getDistinctActiveAccounts,
-  getSubscriptionsByAccount,
-  updateSubscriptionLastPost,
-  incrementErrorCount,
-  resetErrorCount,
+  getSubscribersByAccount,
   storeNewPosts,
   getNewPostsSince,
   getStats,
   ensureIndexes,
 } from '../telegram.service.js';
 import * as connection from '../../../database/connection.js';
-import type { Subscription } from '../telegram.types.js';
-
-vi.mock('../../../config/env.js', () => ({
-  env: {
-    INSTAGRAM_MAX_SUBSCRIPTIONS_PER_USER: '10',
-    INSTAGRAM_POLL_INTERVAL_MS: '900000',
-  },
-}));
+import * as sharedConnection from '@app/shared/src/database/connection.js';
 
 describe('Telegram Service', () => {
   const getDb = setupTestDatabase();
 
   beforeEach(() => {
     vi.spyOn(connection, 'getDatabase').mockReturnValue(getDb());
+    vi.spyOn(sharedConnection, 'getDatabase').mockReturnValue(getDb());
   });
 
   describe('ensureIndexes', () => {
@@ -38,66 +28,31 @@ describe('Telegram Service', () => {
     });
   });
 
-  describe('findOrCreateUser', () => {
-    it('should create a new user', async () => {
-      const user = await findOrCreateUser(12345, 'testuser', 'Test');
-      expect(user.chatId).toBe(12345);
-      expect(user.username).toBe('testuser');
-      expect(user.firstName).toBe('Test');
-      expect(user.createdAt).toBeDefined();
-    });
-
-    it('should return existing user on duplicate chatId', async () => {
-      await findOrCreateUser(12345, 'testuser', 'Test');
-      const user = await findOrCreateUser(12345, 'updateduser', 'Updated');
-      expect(user.chatId).toBe(12345);
-      expect(user.username).toBe('updateduser');
-    });
-  });
-
   describe('addSubscription', () => {
     it('should add a subscription', async () => {
-      const result = await addSubscription(12345, 'bbcnews');
-      expect(result.error).toBeUndefined();
-      expect(result.subscription).toBeDefined();
-      expect(result.subscription!.instagramUsername).toBe('bbcnews');
-      expect(result.subscription!.isActive).toBe(true);
-      expect(result.subscription!.errorCount).toBe(0);
+      const sub = await addSubscription(12345, 'bbcnews', 'testuser', 'Test');
+      expect(sub.chatId).toBe(12345);
+      expect(sub.instagramUsername).toBe('bbcnews');
+      expect(sub.username).toBe('testuser');
+      expect(sub.firstName).toBe('Test');
+      expect(sub.createdAt).toBeDefined();
     });
 
-    it('should reactivate an inactive subscription', async () => {
-      await addSubscription(12345, 'bbcnews');
-      await removeSubscription(12345, 'bbcnews');
-      const result = await addSubscription(12345, 'bbcnews');
-      expect(result.subscription!.isActive).toBe(true);
-    });
-
-    it('should enforce max subscriptions limit', async () => {
-      // Add 10 subscriptions manually (matching the mocked limit of 10)
-      const db = getDb();
-      for (let i = 0; i < 10; i++) {
-        await db.collection('subscriptions').insertOne({
-          chatId: 99999,
-          instagramUsername: `user${i}`,
-          isActive: true,
-          errorCount: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
-
-      const result = await addSubscription(99999, 'onemore');
-      expect(result.error).toContain('You can follow up to');
+    it('should update user info on re-subscribe', async () => {
+      await addSubscription(12345, 'bbcnews', 'oldname', 'Old');
+      const sub = await addSubscription(12345, 'bbcnews', 'newname', 'New');
+      expect(sub.username).toBe('newname');
+      expect(sub.firstName).toBe('New');
     });
   });
 
   describe('removeSubscription', () => {
-    it('should deactivate a subscription', async () => {
+    it('should delete a subscription', async () => {
       await addSubscription(12345, 'bbcnews');
       const removed = await removeSubscription(12345, 'bbcnews');
       expect(removed).toBe(true);
 
-      const subs = await getSubscriptions(12345);
+      const subs = await getSubscriptionsByUser(12345);
       expect(subs.length).toBe(0);
     });
 
@@ -107,14 +62,14 @@ describe('Telegram Service', () => {
     });
   });
 
-  describe('getSubscriptions', () => {
-    it('should return only active subscriptions', async () => {
+  describe('getSubscriptionsByUser', () => {
+    it('should return all subscriptions for a user', async () => {
       await addSubscription(12345, 'account1');
       await addSubscription(12345, 'account2');
       await addSubscription(12345, 'account3');
       await removeSubscription(12345, 'account2');
 
-      const subs = await getSubscriptions(12345);
+      const subs = await getSubscriptionsByUser(12345);
       expect(subs.length).toBe(2);
       expect(subs.map((s) => s.instagramUsername)).toContain('account1');
       expect(subs.map((s) => s.instagramUsername)).toContain('account3');
@@ -122,7 +77,7 @@ describe('Telegram Service', () => {
   });
 
   describe('getDistinctActiveAccounts', () => {
-    it('should return unique active account names', async () => {
+    it('should return unique account names', async () => {
       await addSubscription(11111, 'bbcnews');
       await addSubscription(22222, 'bbcnews');
       await addSubscription(33333, 'cnn');
@@ -132,80 +87,14 @@ describe('Telegram Service', () => {
     });
   });
 
-  describe('getSubscriptionsByAccount', () => {
+  describe('getSubscribersByAccount', () => {
     it('should return all subscribers for an account', async () => {
       await addSubscription(11111, 'bbcnews');
       await addSubscription(22222, 'bbcnews');
       await addSubscription(33333, 'cnn');
 
-      const subs = await getSubscriptionsByAccount('bbcnews');
+      const subs = await getSubscribersByAccount('bbcnews');
       expect(subs.length).toBe(2);
-    });
-  });
-
-  describe('updateSubscriptionLastPost', () => {
-    it('should update lastPostId and lastCheckedAt', async () => {
-      await addSubscription(12345, 'bbcnews');
-      await updateSubscriptionLastPost(12345, 'bbcnews', 'post123');
-
-      const db = getDb();
-      const sub = await db.collection<Subscription>('subscriptions').findOne({
-        chatId: 12345,
-        instagramUsername: 'bbcnews',
-      });
-      expect(sub?.lastPostId).toBe('post123');
-      expect(sub?.lastCheckedAt).toBeDefined();
-    });
-  });
-
-  describe('incrementErrorCount', () => {
-    it('should increment error count for all subs of an account', async () => {
-      await addSubscription(11111, 'failing');
-      await addSubscription(22222, 'failing');
-      await incrementErrorCount('failing');
-
-      const subs = await getSubscriptionsByAccount('failing');
-      expect(subs[0].errorCount).toBe(1);
-      expect(subs[1].errorCount).toBe(1);
-    });
-
-    it('should deactivate after 10 consecutive errors', async () => {
-      await addSubscription(12345, 'broken');
-
-      const db = getDb();
-      // Set error count to 9 so next increment triggers deactivation
-      await db.collection('subscriptions').updateMany(
-        { instagramUsername: 'broken' },
-        { $set: { errorCount: 9 } }
-      );
-
-      await incrementErrorCount('broken');
-
-      const sub = await db.collection<Subscription>('subscriptions').findOne({
-        chatId: 12345,
-        instagramUsername: 'broken',
-      });
-      expect(sub?.isActive).toBe(false);
-    });
-  });
-
-  describe('resetErrorCount', () => {
-    it('should reset error count to 0', async () => {
-      await addSubscription(12345, 'recovered');
-
-      const db = getDb();
-      await db.collection('subscriptions').updateMany(
-        { instagramUsername: 'recovered' },
-        { $set: { errorCount: 5 } }
-      );
-
-      await resetErrorCount('recovered');
-
-      const sub = await db.collection<Subscription>('subscriptions').findOne({
-        chatId: 12345,
-        instagramUsername: 'recovered',
-      });
-      expect(sub?.errorCount).toBe(0);
     });
   });
 
@@ -324,17 +213,13 @@ describe('Telegram Service', () => {
 
   describe('getStats', () => {
     it('should return correct counts', async () => {
-      await findOrCreateUser(11111, 'user1');
-      await findOrCreateUser(22222, 'user2');
       await addSubscription(11111, 'bbcnews');
       await addSubscription(22222, 'cnn');
-      await addSubscription(11111, 'inactive');
-      await removeSubscription(11111, 'inactive');
+      await addSubscription(11111, 'cnn');
 
       const stats = await getStats();
       expect(stats.totalUsers).toBe(2);
       expect(stats.totalSubscriptions).toBe(3);
-      expect(stats.activeSubscriptions).toBe(2);
     });
   });
 });

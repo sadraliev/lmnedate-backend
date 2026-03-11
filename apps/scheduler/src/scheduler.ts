@@ -12,7 +12,7 @@ import {
   createLogger,
   connectToDatabase,
   closeDatabaseConnection,
-  getDatabase,
+  getDistinctActiveAccounts,
   findAccountByUsername,
 } from '@app/shared';
 import type { ScrapeJobData } from '@app/shared';
@@ -48,60 +48,42 @@ const main = async () => {
   const worker = new Worker(
     QUEUE_NAMES.INSTAGRAM_POLL,
     async (_job: Job) => {
-      const db = getDatabase();
-
-      // 1. Get distinct active Instagram usernames from subscriptions
-      const activeUsernames: string[] = await db
-        .collection('subscriptions')
-        .distinct('instagramUsername', { isActive: true });
+      // Get distinct Instagram accounts from telegram_users (subscribers)
+      const activeUsernames = await getDistinctActiveAccounts();
 
       if (activeUsernames.length === 0) {
-        logger.info('No active subscriptions, skipping poll');
+        logger.info('No subscriptions, skipping poll');
         return;
       }
 
-      let totalJobs = 0;
-      let accountCount = 0;
+      let enqueued = 0;
 
       for (const username of activeUsernames) {
-        // 2. Check if account is scrapeable
+        // Check if account is scrapeable
         const account = await findAccountByUsername(username);
         if (!account || account.status !== 'scrapeable') {
           logger.debug({ username, status: account?.status }, 'Skipping non-scrapeable account');
           continue;
         }
 
-        // 3. Get all active subscriber chatIds for this account
-        const subscriptions = await db
-          .collection('subscriptions')
-          .find({ instagramUsername: username, isActive: true })
-          .project<{ chatId: number }>({ chatId: 1 })
-          .toArray();
-
-        // 4. Enqueue a scrape job for each subscriber
-        const jobs = subscriptions.map((sub) => ({
-          name: `scrape-${username}-${sub.chatId}-${Date.now()}`,
-          data: {
+        // Enqueue ONE scrape job per account
+        await scrapeQueue.add(
+          `scrape-${username}-${Date.now()}`,
+          {
             username,
-            chatId: sub.chatId,
             enqueuedAt: new Date().toISOString(),
           } satisfies ScrapeJobData,
-          opts: {
-            removeOnComplete: { count: 50 } as const,
-            removeOnFail: { count: 100 } as const,
+          {
+            removeOnComplete: { count: 50 },
+            removeOnFail: { count: 100 },
             attempts: 3,
-            backoff: { type: 'exponential' as const, delay: 30_000 },
+            backoff: { type: 'exponential', delay: 30_000 },
           },
-        }));
-
-        if (jobs.length > 0) {
-          await scrapeQueue.addBulk(jobs);
-          accountCount++;
-          totalJobs += jobs.length;
-        }
+        );
+        enqueued++;
       }
 
-      logger.info({ totalJobs, accountCount }, 'Enqueued scrape jobs');
+      logger.info({ enqueued, accounts: activeUsernames.length }, 'Enqueued scrape jobs');
     },
     { connection },
   );

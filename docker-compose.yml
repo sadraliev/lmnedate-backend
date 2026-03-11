@@ -36,6 +36,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     volumes:
       - ./apps/bot/src:/app/apps/bot/src
@@ -43,6 +44,8 @@ services:
     command: ["pnpm", "--filter", "@app/bot", "dev:bot"]
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
 
   deliver:
@@ -70,6 +73,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       SCRAPE_CONCURRENCY: "1"
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
@@ -80,6 +84,8 @@ services:
     command: ["pnpm", "--filter", "@app/scraper", "dev"]
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     deploy:
       resources:

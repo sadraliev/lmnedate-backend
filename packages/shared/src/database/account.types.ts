@@ -8,6 +8,7 @@ export type Account = {
   addedBy: number;
   status: AccountStatus;
   lastScrapedAt?: Date;
+  lastPostId?: string;
   createdAt: Date;
   updatedAt: Date;
 };

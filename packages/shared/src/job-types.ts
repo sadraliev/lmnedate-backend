@@ -1,6 +1,5 @@
 export interface ScrapeJobData {
   username: string;
-  chatId: number;
   enqueuedAt: string;
 }
 

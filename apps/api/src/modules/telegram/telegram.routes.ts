@@ -14,7 +14,6 @@ export const registerTelegramRoutes = async (app: FastifyInstance) => {
             properties: {
               totalUsers: { type: 'number' },
               totalSubscriptions: { type: 'number' },
-              activeSubscriptions: { type: 'number' },
               totalPosts: { type: 'number' },
             },
           },

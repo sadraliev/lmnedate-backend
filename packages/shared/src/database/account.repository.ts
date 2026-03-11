@@ -57,3 +57,14 @@ export const updateAccountStatus = async (
     { $set: { status, updatedAt: now } },
   );
 };
+
+export const updateAccountLastPostId = async (
+  instagramUsername: string,
+  lastPostId: string,
+): Promise<void> => {
+  const now = new Date();
+  await getCollection().updateOne(
+    { instagramUsername },
+    { $set: { lastPostId, updatedAt: now } },
+  );
+};

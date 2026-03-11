@@ -25,4 +25,20 @@ export {
   findAccountByUsername,
   updateLastScraped,
   updateAccountStatus,
+  updateAccountLastPostId,
 } from './database/account.repository.js';
+export type { InstagramPost } from './database/post.types.js';
+export type { TelegramSubscriber } from './database/subscription.types.js';
+export {
+  ensurePostIndexes,
+  storeNewPosts,
+  getNewPostsSince,
+} from './database/post.repository.js';
+export {
+  addSubscription,
+  removeSubscription,
+  ensureSubscriptionIndexes,
+  getSubscribersByAccount,
+  getSubscriptionsByUser,
+  getDistinctActiveAccounts,
+} from './database/subscription.repository.js';
