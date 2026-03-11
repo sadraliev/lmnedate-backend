@@ -123,6 +123,21 @@ importers:
         specifier: ^1.41.1
         version: 1.41.1
 
+  apps/scheduler:
+    dependencies:
+      '@app/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      bullmq:
+        specifier: ^5.66.5
+        version: 5.70.4
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.3.1
+      ioredis:
+        specifier: ^5.9.2
+        version: 5.10.0
+
   apps/scraper:
     dependencies:
       '@app/shared':

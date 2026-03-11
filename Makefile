@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web dev-bot dev-deliver dev-scraper build lint test up down docker-logs redis-cli bull-board clean
+.PHONY: help install dev dev-web dev-bot dev-deliver dev-scraper dev-scheduler build lint test up down docker-logs redis-cli bull-board clean
 
 .DEFAULT_GOAL := help
 
@@ -30,8 +30,8 @@ setup: install ## Initial setup (install + create .env)
 
 # Development
 dev: ## Run all services concurrently
-	@pnpm exec concurrently -n bot,deliver,scraper,api -c blue,magenta,cyan,green \
-		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scraper" "pnpm dev:api"
+	@pnpm exec concurrently -n bot,deliver,scraper,scheduler,api -c blue,magenta,cyan,yellow,green \
+		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scraper" "pnpm dev:scheduler" "pnpm dev:api"
 
 dev-api: ## Run API server (Fastify)
 	@pnpm dev:api
@@ -44,6 +44,9 @@ dev-deliver: ## Run deliver worker
 
 dev-scraper: ## Run scraper worker
 	@pnpm dev:scraper
+
+dev-scheduler: ## Run poll scheduler
+	@pnpm dev:scheduler
 
 build: ## Build all packages
 	@pnpm build

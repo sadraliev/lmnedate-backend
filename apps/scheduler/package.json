@@ -1,0 +1,16 @@
+{
+  "name": "@app/scheduler",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch src/scheduler.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@app/shared": "workspace:*",
+    "bullmq": "^5.66.5",
+    "dotenv": "^17.2.3",
+    "ioredis": "^5.9.2"
+  }
+}

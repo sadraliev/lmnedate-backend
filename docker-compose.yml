@@ -87,6 +87,25 @@ services:
           memory: 2G
           cpus: '1.0'
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    container_name: fastify-app-scheduler
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+    volumes:
+      - ./apps/scheduler/src:/app/apps/scheduler/src
+      - ./packages/shared/src:/app/packages/shared/src
+    command: ["pnpm", "--filter", "@app/scheduler", "dev"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
   bull-board:
     image: venatum/bull-board
     container_name: fastify-app-bull-board

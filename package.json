@@ -6,6 +6,7 @@
     "dev:bot": "pnpm --filter @app/bot dev:bot",
     "dev:deliver": "pnpm --filter @app/bot dev:deliver",
     "dev:scraper": "pnpm --filter @app/scraper dev",
+    "dev:scheduler": "pnpm --filter @app/scheduler dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test"
