@@ -7,6 +7,9 @@
 
 import type { Redis as RedisClient } from 'ioredis';
 import type { Browser } from 'playwright';
+import { createLogger } from '@app/shared';
+
+const logger = createLogger({ name: 'session' });
 
 const SESSION_KEY_PREFIX = 'ig:session:';
 const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
@@ -25,7 +28,7 @@ export const loadSession = async (
     JSON.parse(raw);
     return raw;
   } catch {
-    console.error(`[session] Corrupted session for @${username}, deleting`);
+    logger.error({ username }, 'Corrupted session, deleting');
     await redis.del(`${SESSION_KEY_PREFIX}${username}`);
     return null;
   }
@@ -93,7 +96,7 @@ export const loginWithPlaywright = async (
     }
 
     const state = await context.storageState();
-    console.log(`[session] Logged in as @${username}`);
+    logger.info({ username }, 'Logged in');
     return JSON.stringify(state);
   } finally {
     await context.close();

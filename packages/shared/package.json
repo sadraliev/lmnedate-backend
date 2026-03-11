@@ -9,5 +9,8 @@
     "lint": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "pino": "^10.2.0"
   }
 }

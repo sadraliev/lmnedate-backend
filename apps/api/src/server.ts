@@ -64,9 +64,10 @@ export const createServer = async () => {
   const app = Fastify({
     logger: {
       level:
-        env.NODE_ENV === "production" || env.NODE_ENV === "test"
+        process.env.LOG_LEVEL ??
+        (env.NODE_ENV === "production" || env.NODE_ENV === "test"
           ? "info"
-          : "debug",
+          : "debug"),
       transport:
         env.NODE_ENV !== "production"
           ? {

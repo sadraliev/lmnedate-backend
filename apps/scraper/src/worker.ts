@@ -8,9 +8,11 @@ import 'dotenv/config';
 import { Worker, Queue } from 'bullmq';
 import type { Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { QUEUE_NAMES, createRedisConnection } from '@app/shared';
+import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
 import type { ScrapeJobData, DeliverJobData } from '@app/shared';
 import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.js';
+
+const logger = createLogger({ name: 'scraper' });
 
 // ---------------------------------------------------------------------------
 // Config from environment (no env.ts dependency)
@@ -30,14 +32,14 @@ const connectRedis = (): Redis => {
   redis = new Redis(REDIS_URL, {
     retryStrategy: (times) => {
       const delay = Math.min(times * 500, 30_000);
-      console.log(`[scraper] Redis reconnecting (attempt ${times}, next in ${delay}ms)`);
+      logger.info({ attempt: times, delay }, 'Redis reconnecting');
       return delay;
     },
     maxRetriesPerRequest: 3,
   });
-  redis.on('error', (err) => console.error('[scraper] Redis error:', err.message));
-  redis.on('reconnecting', () => console.log('[scraper] Redis reconnecting...'));
-  console.log(`[scraper] Connected to Redis`);
+  redis.on('error', (err) => logger.error({ err: err.message }, 'Redis error'));
+  redis.on('reconnecting', () => logger.info('Redis reconnecting...'));
+  logger.info('Connected to Redis');
   return redis;
 };
 
@@ -48,7 +50,7 @@ const main = async () => {
   connectRedis();
   await initSession(redis, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
 
-  const bullmqConnection = createRedisConnection(REDIS_URL, 'scraper-bullmq');
+  const bullmqConnection = createRedisConnection(REDIS_URL, 'scraper-bullmq', logger);
 
   const deliverQueue = new Queue<DeliverJobData>(QUEUE_NAMES.INSTAGRAM_DELIVER, {
     connection: bullmqConnection,
@@ -58,7 +60,8 @@ const main = async () => {
     QUEUE_NAMES.INSTAGRAM_SCRAPE,
     async (job: Job<ScrapeJobData>) => {
       const { username, chatId } = job.data;
-      console.log(`[scraper] Processing scrape job for @${username} (chatId=${chatId})`);
+      const jobLog = logger.child({ jobId: job.id, username, chatId });
+      jobLog.info('Processing scrape job');
 
       try {
         const rawPosts = await withTimeout(
@@ -68,7 +71,7 @@ const main = async () => {
         );
 
         if (rawPosts.length === 0) {
-          console.log(`[scraper] No posts found for @${username}`);
+          jobLog.info('No posts found');
           await deliverQueue.add(
             `deliver-${username}-${Date.now()}`,
             { chatId, error: `No posts found for @${username}. The profile may be private or empty.` },
@@ -98,10 +101,10 @@ const main = async () => {
             backoff: { type: 'exponential', delay: 30_000 },
           },
         );
-        console.log(`[scraper] Enqueued delivery for @${username} → chatId=${chatId}`);
+        jobLog.info('Enqueued delivery');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[scraper] Failed to scrape @${username}:`, message);
+        jobLog.error({ err: message }, 'Failed to scrape');
         await deliverQueue.add(
           `deliver-error-${username}-${Date.now()}`,
           { chatId, error: `Failed to fetch @${username}: ${message}` },
@@ -117,18 +120,18 @@ const main = async () => {
   );
 
   worker.on('completed', (job) => {
-    console.log(`[scraper] Job ${job.id} completed`);
+    logger.info({ jobId: job.id }, 'Job completed');
   });
 
   worker.on('failed', (job, err) => {
-    console.error(`[scraper] Job ${job?.id} failed:`, err.message);
+    logger.error({ jobId: job?.id, err: err.message }, 'Job failed');
   });
 
-  console.log(`[scraper] Worker started (concurrency=${SCRAPE_CONCURRENCY}, timeout=${SCRAPE_TIMEOUT_MS}ms)`);
+  logger.info({ concurrency: SCRAPE_CONCURRENCY, timeout: SCRAPE_TIMEOUT_MS }, 'Worker started');
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    console.log(`[scraper] Received ${signal}, shutting down...`);
+    logger.info({ signal }, 'Shutting down');
     await worker.close();
     await deliverQueue.close();
     await closeBrowser();
@@ -141,6 +144,6 @@ const main = async () => {
 };
 
 main().catch((err) => {
-  console.error('[scraper] Fatal error:', err);
+  logger.fatal({ err }, 'Fatal error');
   process.exit(1);
 });

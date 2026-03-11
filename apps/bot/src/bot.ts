@@ -6,22 +6,24 @@
  */
 
 import { Queue } from 'bullmq';
-import { QUEUE_NAMES, createRedisConnection } from '@app/shared';
+import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
 import type { ScrapeJobData } from '@app/shared';
 import { bot } from './bot-instance.js';
+
+const logger = createLogger({ name: 'bot' });
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const redisConnection = createRedisConnection(REDIS_URL, 'bot');
+const redisConnection = createRedisConnection(REDIS_URL, 'bot', logger);
 
 const scrapeQueue = new Queue<ScrapeJobData>(QUEUE_NAMES.INSTAGRAM_SCRAPE, {
   connection: redisConnection,
 });
 
 bot.command('start', async (ctx) => {
-  console.log(`[bot] /start from chatId=${ctx.chat.id}`);
+  logger.info({ chatId: ctx.chat.id }, '/start command received');
   await ctx.reply(
     'Instagram Scraper Bot\n\n' +
     'Send /update <username> to get the latest post from any public Instagram account.\n\n' +
@@ -63,7 +65,7 @@ bot.command('update', async (ctx) => {
 });
 
 bot.catch((err) => {
-  console.error('[bot] Grammy error:', err.error);
+  logger.error({ err: err.error }, 'Grammy error');
 });
 
 // ---------------------------------------------------------------------------
@@ -71,11 +73,11 @@ bot.catch((err) => {
 // ---------------------------------------------------------------------------
 const main = async () => {
   bot.start();
-  console.log('[bot] Telegram bot started');
+  logger.info('Telegram bot started');
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    console.log(`[bot] Received ${signal}, shutting down...`);
+    logger.info({ signal }, 'Shutting down');
     await bot.stop();
     await scrapeQueue.close();
     process.exit(0);
@@ -86,6 +88,6 @@ const main = async () => {
 };
 
 main().catch((err) => {
-  console.error('[bot] Fatal error:', err);
+  logger.fatal({ err }, 'Fatal error');
   process.exit(1);
 });

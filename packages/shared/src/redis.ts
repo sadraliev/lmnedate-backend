@@ -28,7 +28,7 @@ export const parseRedisUrl = (redisUrl: string): RedisConfig => {
  * Includes retry strategy with exponential backoff (capped at 30s)
  * and maxRetriesPerRequest: null (required for BullMQ workers).
  */
-export const createRedisConnection = (url: string, name: string) => {
+export const createRedisConnection = (url: string, name: string, log?: import('./logger.js').Logger) => {
   const config = parseRedisUrl(url);
   return {
     host: config.host,
@@ -38,7 +38,11 @@ export const createRedisConnection = (url: string, name: string) => {
     maxRetriesPerRequest: null as null,
     retryStrategy: (times: number) => {
       const delay = Math.min(times * 500, 30_000);
-      console.log(`[${name}] Redis reconnecting (attempt ${times}, next in ${delay}ms)`);
+      if (log) {
+        log.info({ attempt: times, delay }, 'Redis reconnecting');
+      } else {
+        console.log(`[${name}] Redis reconnecting (attempt ${times}, next in ${delay}ms)`);
+      }
       return delay;
     },
   };

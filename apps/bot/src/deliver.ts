@@ -7,15 +7,17 @@
 
 import { Worker } from 'bullmq';
 import type { Job } from 'bullmq';
-import { QUEUE_NAMES, createRedisConnection } from '@app/shared';
+import { QUEUE_NAMES, createRedisConnection, createLogger } from '@app/shared';
 import type { DeliverJobData } from '@app/shared';
 import { bot } from './bot-instance.js';
+
+const logger = createLogger({ name: 'deliver' });
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const redisConnection = createRedisConnection(REDIS_URL, 'deliver');
+const redisConnection = createRedisConnection(REDIS_URL, 'deliver', logger);
 
 // ---------------------------------------------------------------------------
 // Deliver worker
@@ -24,20 +26,21 @@ const worker = new Worker<DeliverJobData>(
   QUEUE_NAMES.INSTAGRAM_DELIVER,
   async (job: Job<DeliverJobData>) => {
     const { chatId, post, error } = job.data;
+    const jobLog = logger.child({ jobId: job.id, chatId });
 
     // Handle error/notification messages
     if (error) {
-      console.log(`[deliver] Sending error to chatId=${chatId}: ${error}`);
+      jobLog.info({ error }, 'Sending error message');
       await bot.api.sendMessage(chatId, error);
       return;
     }
 
     if (!post) {
-      console.log(`[deliver] No post data for chatId=${chatId}, skipping`);
+      jobLog.warn('No post data, skipping');
       return;
     }
 
-    console.log(`[deliver] Delivering post from @${post.instagramUsername} to chatId=${chatId}`);
+    jobLog.info({ username: post.instagramUsername }, 'Delivering post');
 
     const caption =
       `<b>@${post.instagramUsername}</b>\n\n` +
@@ -65,7 +68,7 @@ const worker = new Worker<DeliverJobData>(
     try {
       await send();
     } catch (err: unknown) {
-      console.error(`[deliver] Failed to deliver to chatId=${chatId}:`, err);
+      jobLog.error({ err }, 'Failed to deliver');
       throw err; // Let BullMQ handle retries with backoff
     }
   },
@@ -80,23 +83,23 @@ const worker = new Worker<DeliverJobData>(
 );
 
 worker.on('completed', (job) => {
-  console.log(`[deliver] Job ${job.id} completed`);
+  logger.info({ jobId: job.id }, 'Job completed');
 });
 
 worker.on('failed', (job, err) => {
-  console.error(`[deliver] Job ${job?.id} failed:`, err.message);
+  logger.error({ jobId: job?.id, err: err.message }, 'Job failed');
 });
 
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-console.log('[deliver] Deliver worker started');
+logger.info('Deliver worker started');
 
 // Graceful shutdown
 const shutdown = async (signal: string) => {
-  console.log(`[deliver] Received ${signal}, shutting down...`);
+  logger.info({ signal }, 'Shutting down');
   const timeout = setTimeout(() => {
-    console.error('[deliver] Shutdown timed out after 10s, forcing exit');
+    logger.error('Shutdown timed out after 10s, forcing exit');
     process.exit(1);
   }, 10_000);
   await worker.close();

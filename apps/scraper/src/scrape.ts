@@ -7,6 +7,9 @@ import type { Redis } from 'ioredis';
 import type { ScrapedPost } from './types.js';
 import { extractPosts, extractPostsFromHtml, findNestedValue } from './parser.js';
 import { loadSession, saveSession, loginWithPlaywright } from './session.js';
+import { createLogger } from '@app/shared';
+
+const logger = createLogger({ name: 'scraper' });
 
 let browser: Browser | null = null;
 
@@ -14,7 +17,7 @@ export const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
   browser = await chromium.launch({ headless: true });
   browser.on('disconnected', () => {
-    console.log('[scraper] Browser disconnected, will relaunch on next job');
+    logger.info('Browser disconnected, will relaunch on next job');
     browser = null;
   });
   return browser;
@@ -50,18 +53,18 @@ export const initSession = async (
   igPassword: string,
 ): Promise<void> => {
   if (!igUsername || !igPassword) {
-    console.log('[scraper] No Instagram credentials configured — scraping without auth');
+    logger.info('No Instagram credentials configured — scraping without auth');
     return;
   }
 
   const existing = await loadSession(redis, igUsername);
   if (existing) {
     cachedStorageState = existing;
-    console.log(`[scraper] Loaded existing session for @${igUsername}`);
+    logger.info({ igUsername }, 'Loaded existing session');
     return;
   }
 
-  console.log(`[scraper] No cached session — logging in as @${igUsername}`);
+  logger.info({ igUsername }, 'No cached session — logging in');
   const b = await getBrowser();
   const state = await loginWithPlaywright(b, igUsername, igPassword);
   await saveSession(redis, igUsername, state);
@@ -73,7 +76,7 @@ export const refreshSession = async (
   igUsername: string,
   igPassword: string,
 ): Promise<void> => {
-  console.log(`[scraper] Refreshing session for @${igUsername}`);
+  logger.info({ igUsername }, 'Refreshing session');
   const b = await getBrowser();
   const state = await loginWithPlaywright(b, igUsername, igPassword);
   await saveSession(redis, igUsername, state);
@@ -94,7 +97,7 @@ const enrichPostsWithApi = async (
   const unenriched = posts.filter((p) => p.likesCount === undefined);
   if (unenriched.length === 0) return;
 
-  console.log(`[scraper] Enriching ${unenriched.length} posts via mobile feed API...`);
+  logger.info({ username, count: unenriched.length }, 'Enriching posts via mobile feed API');
 
   try {
     // Step 1: resolve username → user_id
@@ -109,7 +112,7 @@ const enrichPostsWithApi = async (
     }, username);
 
     if (!userId) {
-      console.log('[scraper] Could not resolve user_id — skipping enrichment');
+      logger.info({ username }, 'Could not resolve user_id — skipping enrichment');
       return;
     }
 
@@ -124,7 +127,7 @@ const enrichPostsWithApi = async (
     }, userId);
 
     if (!feedJson) {
-      console.log('[scraper] Feed API returned non-200 — skipping enrichment');
+      logger.info({ username }, 'Feed API returned non-200 — skipping enrichment');
       return;
     }
 
@@ -160,9 +163,9 @@ const enrichPostsWithApi = async (
       count++;
     }
 
-    console.log(`[scraper] Enriched ${count}/${unenriched.length} posts`);
+    logger.info({ username, enriched: count, total: unenriched.length }, 'Enrichment complete');
   } catch (err) {
-    console.log(`[scraper] Enrichment failed: ${err instanceof Error ? err.message : err}`);
+    logger.warn({ username, err: err instanceof Error ? err.message : err }, 'Enrichment failed');
   }
 };
 
@@ -177,7 +180,7 @@ const enrichLatestPostViaPage = async (
   page: Page,
   username: string,
 ): Promise<void> => {
-  console.log(`[scraper] Enriching latest post ${post.postId} via page navigation...`);
+  logger.info({ postId: post.postId }, 'Enriching latest post via page navigation');
 
   try {
     await page.goto(post.permalink, {
@@ -227,14 +230,14 @@ const enrichLatestPostViaPage = async (
         if (e.caption) post.caption = e.caption;
         if (e.mediaUrl) post.mediaUrl = e.mediaUrl;
         if (e.mediaType) post.mediaType = e.mediaType;
-        console.log(`[scraper] Latest post enriched via page navigation`);
+        logger.info({ postId: post.postId }, 'Latest post enriched via page navigation');
         return;
       }
     }
 
-    console.log(`[scraper] No embedded post data found for ${post.postId}`);
+    logger.info({ postId: post.postId }, 'No embedded post data found');
   } catch (err) {
-    console.log(`[scraper] Page enrichment failed: ${err instanceof Error ? err.message : err}`);
+    logger.warn({ postId: post.postId, err: err instanceof Error ? err.message : err }, 'Page enrichment failed');
   }
 };
 
@@ -264,7 +267,7 @@ export const scrapeProfile = async (
       try {
         contextOptions.storageState = JSON.parse(cachedStorageState);
       } catch {
-        console.error('[scraper] Corrupted cached session, clearing');
+        logger.error('Corrupted cached session, clearing');
         cachedStorageState = null;
       }
     }
@@ -300,13 +303,13 @@ export const scrapeProfile = async (
 
     // Wait for JS to execute API calls and intercept responses
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
-      console.log(`[scraper] networkidle timeout for @${username}, continuing`);
+      logger.debug({ username }, 'networkidle timeout, continuing');
     });
 
     // Detect login wall — if redirected to login page, re-auth and retry once
     const currentUrl = page.url();
     if (currentUrl.includes('/accounts/login') && retry && igUsername) {
-      console.log(`[scraper] Login wall detected for @${username} — re-authenticating`);
+      logger.info({ username }, 'Login wall detected — re-authenticating');
       await context.close();
       context = null;
       await refreshSession(redis, igUsername, igPassword);
@@ -320,7 +323,7 @@ export const scrapeProfile = async (
 
     // Fallback: extract posts directly from the DOM
     if (posts.length === 0) {
-      console.log(`[scraper] No posts from intercept/HTML for @${username}, trying DOM extraction...`);
+      logger.info({ username }, 'No posts from intercept/HTML, trying DOM extraction');
       const domPosts = await page.$$eval(
         'a[href*="/p/"], a[href*="/reel/"]',
         (links) => {
@@ -352,7 +355,7 @@ export const scrapeProfile = async (
           createdAt: new Date(),
         });
       }
-      console.log(`[scraper] DOM extraction found ${domPosts.length} posts for @${username}`);
+      logger.info({ username, count: domPosts.length }, 'DOM extraction complete');
     }
 
     // Enrich posts that are missing engagement data
