@@ -90,7 +90,7 @@ services:
   scheduler:
     build:
       context: .
-      dockerfile: apps/scheduler/Dockerfile
+      dockerfile: apps/bot/Dockerfile
     container_name: fastify-app-scheduler
     restart: unless-stopped
     environment:
