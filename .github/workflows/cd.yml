@@ -74,7 +74,17 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD
           script: |
             cd ~/app
+            cat > .env <<EOF
+            TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+            INSTAGRAM_USERNAME=$INSTAGRAM_USERNAME
+            INSTAGRAM_PASSWORD=$INSTAGRAM_PASSWORD
+            EOF
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
+          INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
