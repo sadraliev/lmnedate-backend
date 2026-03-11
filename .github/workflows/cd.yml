@@ -102,8 +102,10 @@ jobs:
             ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
             EOF
             echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
-            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml down --rmi all --remove-orphans || true
             docker image prune -af
+            docker volume prune -f
+            docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
