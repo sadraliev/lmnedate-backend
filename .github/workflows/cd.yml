@@ -70,7 +70,11 @@ jobs:
           role-to-assume: ${{ secrets.IAC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Get ECR login password
+        id: ecr
+        run: |
+          echo "password=$(aws ecr get-login-password --region ${{ vars.AWS_REGION }})" >> "$GITHUB_OUTPUT"
+          echo "registry=$(echo ${{ secrets.ECR_BOT_REPOSITORY_URL }} | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Copy compose file to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -87,7 +91,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL
+          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL,ECR_PASSWORD,ECR_REGISTRY
           script: |
             cd ~/app
             cat > .env <<EOF
@@ -97,6 +101,7 @@ jobs:
             ECR_BOT_REPOSITORY_URL=$ECR_BOT_REPOSITORY_URL
             ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
             EOF
+            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
         env:
@@ -105,3 +110,5 @@ jobs:
           INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
           ECR_BOT_REPOSITORY_URL: ${{ secrets.ECR_BOT_REPOSITORY_URL }}
           ECR_SCRAPER_REPOSITORY_URL: ${{ secrets.ECR_SCRAPER_REPOSITORY_URL }}
+          ECR_PASSWORD: ${{ steps.ecr.outputs.password }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
