@@ -87,13 +87,15 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD
+          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL
           script: |
             cd ~/app
             cat > .env <<EOF
             TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
             INSTAGRAM_USERNAME=$INSTAGRAM_USERNAME
             INSTAGRAM_PASSWORD=$INSTAGRAM_PASSWORD
+            ECR_BOT_REPOSITORY_URL=$ECR_BOT_REPOSITORY_URL
+            ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
             EOF
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
@@ -101,3 +103,5 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
           INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
+          ECR_BOT_REPOSITORY_URL: ${{ secrets.ECR_BOT_REPOSITORY_URL }}
+          ECR_SCRAPER_REPOSITORY_URL: ${{ secrets.ECR_SCRAPER_REPOSITORY_URL }}
