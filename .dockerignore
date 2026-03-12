@@ -1,0 +1,9 @@
+node_modules
+.git
+.github
+.env
+*.md
+apps/*/node_modules
+packages/*/node_modules
+apps/*/logs
+scripts

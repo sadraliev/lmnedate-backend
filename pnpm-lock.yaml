@@ -122,6 +122,9 @@ importers:
       grammy:
         specifier: ^1.41.1
         version: 1.41.1
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   apps/scheduler:
     dependencies:
@@ -137,6 +140,9 @@ importers:
       ioredis:
         specifier: ^5.9.2
         version: 5.10.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   apps/scraper:
     dependencies:
@@ -155,6 +161,9 @@ importers:
       playwright:
         specifier: ^1.58.2
         version: 1.58.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   packages/shared:
     dependencies:

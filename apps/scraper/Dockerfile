@@ -4,7 +4,7 @@ WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/scraper/package.json apps/scraper/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --prod
 COPY packages/shared/ packages/shared/
 COPY apps/scraper/ apps/scraper/
 CMD ["pnpm", "--filter", "@app/scraper", "dev"]

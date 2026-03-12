@@ -12,6 +12,7 @@
     "@app/shared": "workspace:*",
     "bullmq": "^5.66.5",
     "dotenv": "^17.2.3",
-    "grammy": "^1.41.1"
+    "grammy": "^1.41.1",
+    "tsx": "^4.21.0"
   }
 }

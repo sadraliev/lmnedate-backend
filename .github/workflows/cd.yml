@@ -102,11 +102,18 @@ jobs:
             ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
             EOF
             echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
-            docker compose -f docker-compose.prod.yml down --rmi all --remove-orphans || true
-            docker image prune -af
-            docker volume prune -f
             docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -af
+            # Verify containers are running
+            sleep 5
+            FAILED=$(docker ps --filter "status=restarting" --format "{{.Names}}" 2>/dev/null)
+            if [ -n "$FAILED" ]; then
+              echo "DEPLOY FAILED — containers restarting: $FAILED"
+              docker logs $(echo "$FAILED" | head -1) --tail 20
+              exit 1
+            fi
+            echo "Deploy OK — all containers running"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
