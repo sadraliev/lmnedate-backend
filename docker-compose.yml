@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
       SCRAPE_CONCURRENCY: "1"
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}

@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     depends_on:
       mongodb:
@@ -43,7 +43,7 @@ services:
     environment:
       NODE_ENV: production
       REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     depends_on:
       redis:
@@ -58,7 +58,7 @@ services:
     environment:
       NODE_ENV: production
       REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
       SCRAPE_CONCURRENCY: "1"
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}

@@ -172,12 +172,20 @@ const main = async () => {
   const pollQueue = new Queue(QUEUE_NAMES.INSTAGRAM_POLL, { connection });
   const scrapeQueue = new Queue<ScrapeJobData>(QUEUE_NAMES.INSTAGRAM_SCRAPE, { connection });
 
-  // Upsert the repeatable job (idempotent — safe to call on every startup)
+  // Clean stale schedulers, then register fresh one
+  const existingSchedulers = await pollQueue.getJobSchedulers();
+  for (const s of existingSchedulers) {
+    if (s.id !== 'instagram-poll-scheduler') {
+      await pollQueue.removeJobScheduler(s.id);
+    }
+  }
   await pollQueue.upsertJobScheduler(
     'instagram-poll-scheduler',
     { every: POLL_INTERVAL_MS },
     { name: 'poll-tick' },
   );
+  // Drain leftover delayed/waiting jobs from previous runs
+  await pollQueue.drain();
   logger.info({ intervalMs: POLL_INTERVAL_MS }, 'Repeatable poll job registered');
 
   const pollWorker = new Worker(
