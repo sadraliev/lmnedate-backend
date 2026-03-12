@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --watch src/scheduler.ts",
+    "start": "node --import tsx src/scheduler.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@app/shared": "workspace:*",
     "bullmq": "^5.66.5",
     "dotenv": "^17.2.3",
-    "ioredis": "^5.9.2",
+    "ioredis": "^5.9.2"
+  },
+  "devDependencies": {
     "tsx": "^4.21.0"
   }
 }

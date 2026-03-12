@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web dev-bot dev-deliver dev-scraper dev-scheduler build lint test up down docker-logs redis-cli bull-board clean
+.PHONY: help install dev dev-bot dev-scraper build lint test up down docker-logs redis-cli bull-board clean
 
 .DEFAULT_GOAL := help
 
@@ -29,24 +29,21 @@ setup: install ## Initial setup (install + create .env)
 	fi
 
 # Development
-dev: ## Run all services concurrently
-	@pnpm exec concurrently -n bot,deliver,scraper,scheduler,api -c blue,magenta,cyan,yellow,green \
-		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scraper" "pnpm dev:scheduler" "pnpm dev:api"
+dev: ## Run bot + deliver + scheduler + scraper concurrently
+	@pnpm exec concurrently -n bot,deliver,scheduler,scraper -c blue,green,yellow,cyan \
+		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scheduler" "pnpm dev:scraper"
 
-dev-api: ## Run API server (Fastify)
-	@pnpm dev:api
-
-dev-bot: ## Run Telegram bot
+dev-bot: ## Run bot
 	@pnpm dev:bot
 
 dev-deliver: ## Run deliver worker
 	@pnpm dev:deliver
 
+dev-scheduler: ## Run scheduler
+	@pnpm dev:scheduler
+
 dev-scraper: ## Run scraper worker
 	@pnpm dev:scraper
-
-dev-scheduler: ## Run poll scheduler
-	@pnpm dev:scheduler
 
 build: ## Build all packages
 	@pnpm build
@@ -58,9 +55,10 @@ test: ## Run all tests
 	@pnpm test
 
 # Docker
-up: ## Start all containers
+up: ## Start infra containers (mongo, redis, bull-board)
 	@echo "$(BLUE)Starting Docker containers...$(NC)"
 	@docker-compose up -d
+	@echo "$(GREEN)MongoDB running on port 27019$(NC)"
 	@echo "$(GREEN)Redis running on port 6381$(NC)"
 	@echo "$(GREEN)Bull Board running on port 3333$(NC)"
 

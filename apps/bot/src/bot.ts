@@ -15,6 +15,7 @@ import {
   createLogger,
   connectToDatabase,
   closeDatabaseConnection,
+  getDatabase,
   ensureSubscriptionIndexes,
   ensureAccountIndexes,
   addSubscription,
@@ -74,6 +75,30 @@ bot.command('update', async (ctx) => {
     const message = error instanceof Error ? error.message : String(error);
     logger.error({ err: message, chatId, username }, 'Failed to add subscription');
     await ctx.reply(`Failed to subscribe to @${username}. Please try again later.`);
+  }
+});
+
+bot.command('stats', async (ctx) => {
+  try {
+    const db = getDatabase();
+    const [totalUsers, totalSubscriptions, totalPosts] = await Promise.all([
+      db.collection('telegram_users').aggregate([
+        { $group: { _id: '$chatId' } },
+        { $count: 'count' },
+      ]).toArray().then((r) => r[0]?.count ?? 0),
+      db.collection('telegram_users').countDocuments(),
+      db.collection('instagram_posts').countDocuments(),
+    ]);
+
+    await ctx.reply(
+      `Stats\n\n` +
+      `Users: ${totalUsers}\n` +
+      `Subscriptions: ${totalSubscriptions}\n` +
+      `Posts: ${totalPosts}`,
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to get stats');
+    await ctx.reply('Failed to get stats. Please try again later.');
   }
 });
 

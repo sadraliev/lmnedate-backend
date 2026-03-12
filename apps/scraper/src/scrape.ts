@@ -3,10 +3,10 @@
  */
 
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import type { Redis } from 'ioredis';
+import type { APIRequestContext } from 'playwright';
 import type { ScrapedPost } from './types.js';
 import { extractPosts, extractPostsFromHtml, findNestedValue } from './parser.js';
-import { loadSession, saveSession, loginWithPlaywright } from './session.js';
+import { loadSession, loginWithPlaywright } from './session.js';
 import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'scraper' });
@@ -49,12 +49,11 @@ export const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): 
 };
 
 /**
- * Instagram session management
+ * Instagram session management (file-based)
  */
-let cachedStorageState: string | null = null;
+let cachedSessionPath: string | null = null;
 
 export const initSession = async (
-  redis: Redis,
   igUsername: string,
   igPassword: string,
 ): Promise<void> => {
@@ -63,41 +62,34 @@ export const initSession = async (
     return;
   }
 
-  const existing = await loadSession(redis, igUsername);
+  const existing = await loadSession();
   if (existing) {
-    cachedStorageState = existing;
-    logger.info({ igUsername }, 'Loaded existing session');
+    cachedSessionPath = existing;
+    logger.info({ igUsername }, 'Loaded existing session from file');
     return;
   }
 
   logger.info({ igUsername }, 'No cached session — logging in');
   const b = await getBrowser();
-  const state = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
-  await saveSession(redis, igUsername, state);
-  cachedStorageState = state;
+  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
 };
 
 export const refreshSession = async (
-  redis: Redis,
   igUsername: string,
   igPassword: string,
 ): Promise<void> => {
   logger.info({ igUsername }, 'Refreshing session');
   const b = await getBrowser();
-  const state = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
-  await saveSession(redis, igUsername, state);
-  cachedStorageState = state;
+  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
 };
 
 /**
  * Enrich posts missing engagement data via Instagram's mobile feed API.
- * Two steps: resolve username → user_id, then fetch the feed.
- * Runs fetch inside the browser context to inherit cookies + TLS fingerprint.
- * Best-effort — on failure, posts keep their existing data.
+ * Uses context.request (Playwright APIRequestContext) instead of page.evaluate(fetch).
  */
 const enrichPostsWithApi = async (
   posts: ScrapedPost[],
-  page: Page,
+  request: APIRequestContext,
   username: string,
 ): Promise<void> => {
   const unenriched = posts.filter((p) => p.likesCount === undefined);
@@ -107,35 +99,36 @@ const enrichPostsWithApi = async (
 
   try {
     // Step 1: resolve username → user_id
-    const userId = await page.evaluate(async (user: string) => {
-      const res = await fetch(
-        `https://i.instagram.com/api/v1/users/web_profile_info/?username=${user}`,
-        { credentials: 'include', headers: { 'X-IG-App-ID': '936619743392459' } },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as { data?: { user?: { id?: string } } };
-      return json?.data?.user?.id ?? null;
-    }, username);
+    const profileRes = await request.get(
+      `https://i.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+      { headers: { 'X-IG-App-ID': '936619743392459' } },
+    );
+
+    if (!profileRes.ok()) {
+      logger.info({ username }, 'Could not resolve user_id — skipping enrichment');
+      return;
+    }
+
+    const profileJson = (await profileRes.json()) as { data?: { user?: { id?: string } } };
+    const userId = profileJson?.data?.user?.id ?? null;
 
     if (!userId) {
       logger.info({ username }, 'Could not resolve user_id — skipping enrichment');
       return;
     }
 
-    // Step 2: fetch feed (single API call returns all posts)
-    const feedJson = await page.evaluate(async (uid: string) => {
-      const res = await fetch(
-        `https://i.instagram.com/api/v1/feed/user/${uid}/?count=12`,
-        { credentials: 'include', headers: { 'X-IG-App-ID': '936619743392459' } },
-      );
-      if (!res.ok) return null;
-      return res.json();
-    }, userId);
+    // Step 2: fetch feed
+    const feedRes = await request.get(
+      `https://i.instagram.com/api/v1/feed/user/${userId}/?count=12`,
+      { headers: { 'X-IG-App-ID': '936619743392459' } },
+    );
 
-    if (!feedJson) {
+    if (!feedRes.ok()) {
       logger.info({ username }, 'Feed API returned non-200 — skipping enrichment');
       return;
     }
+
+    const feedJson = await feedRes.json();
 
     // Parse feed items into enriched posts
     const enrichedPosts: ScrapedPost[] = [];
@@ -144,8 +137,6 @@ const enrichPostsWithApi = async (
     // Build a lookup by postId (shortcode) for fast matching
     const enrichedByCode = new Map<string, ScrapedPost>();
     for (const ep of enrichedPosts) {
-      // Feed items use numeric pk as postId, but DOM posts use shortcode.
-      // Match by permalink shortcode instead.
       const match = ep.permalink.match(/\/(p|reel)\/([^/]+)/);
       if (match) enrichedByCode.set(match[2], ep);
     }
@@ -178,9 +169,7 @@ const enrichPostsWithApi = async (
 
 /**
  * Fallback: enrich the latest post by navigating the existing page to the post
- * URL and extracting embedded JSON from the HTML. Instagram embeds post data as
- * API v1 items under `xdt_api__v1__media__shortcode__web_info` in script tags.
- * Reuses the same page to preserve session cookies and browser state.
+ * URL and extracting embedded JSON from the HTML.
  */
 const enrichLatestPostViaPage = async (
   post: ScrapedPost,
@@ -197,9 +186,6 @@ const enrichLatestPostViaPage = async (
 
     await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
 
-    // Extract embedded post data from the raw HTML.
-    // Instagram embeds API v1 data in <script type="application/json"> tags
-    // under the key xdt_api__v1__media__shortcode__web_info.
     const html = await page.content();
     const scriptRegex = /<script type="application\/json"[^>]*>([\s\S]*?)<\/script>/g;
     let embeddedJson: unknown = null;
@@ -257,7 +243,6 @@ export const scrapeProfile = async (
   timeoutMs: number,
   igUsername: string,
   igPassword: string,
-  redis: Redis,
   retry = true,
 ): Promise<ScrapedPost[]> => {
   let context: BrowserContext | null = null;
@@ -270,13 +255,8 @@ export const scrapeProfile = async (
       locale: 'en-US',
     };
 
-    if (cachedStorageState) {
-      try {
-        contextOptions.storageState = JSON.parse(cachedStorageState);
-      } catch {
-        logger.error('Corrupted cached session, clearing');
-        cachedStorageState = null;
-      }
+    if (cachedSessionPath) {
+      contextOptions.storageState = cachedSessionPath;
     }
 
     context = await b.newContext(contextOptions);
@@ -308,30 +288,27 @@ export const scrapeProfile = async (
       timeout: timeoutMs,
     });
 
-    // Wait for JS to execute API calls and intercept responses
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
       logger.debug({ username }, 'networkidle timeout, continuing');
     });
 
-    // Debug: log page state
     const currentUrl = page.url();
     const pageTitle = await page.title();
     logger.info({ username, url: currentUrl, title: pageTitle }, 'Page loaded');
 
-    // Detect login wall — if redirected to login page, re-auth and retry once
+    // Detect login wall — re-auth and retry once
     if (currentUrl.includes('/accounts/login') && retry && igUsername) {
       logger.info({ username }, 'Login wall detected — re-authenticating');
       await context.close();
       context = null;
-      await refreshSession(redis, igUsername, igPassword);
-      return scrapeProfile(username, timeoutMs, igUsername, igPassword, redis, false);
+      await refreshSession(igUsername, igPassword);
+      return scrapeProfile(username, timeoutMs, igUsername, igPassword, false);
     }
 
-    // Scroll down to trigger lazy loading of posts grid
+    // Scroll down to trigger lazy loading
     if (posts.length === 0) {
       await page.evaluate(() => window.scrollBy(0, 800));
       await page.waitForTimeout(3_000);
-      // Wait for any new network requests triggered by scroll
       await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
     }
 
@@ -342,7 +319,6 @@ export const scrapeProfile = async (
 
     // Fallback: extract posts directly from the DOM
     if (posts.length === 0) {
-      // Debug: log page structure to diagnose rendering issues
       const debugInfo = await page.evaluate(() => {
         const allLinks = document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"]');
         const articles = document.querySelectorAll('article');
@@ -391,15 +367,15 @@ export const scrapeProfile = async (
       logger.info({ username, count: domPosts.length }, 'DOM extraction complete');
     }
 
-    // Enrich posts that are missing engagement data
-    await enrichPostsWithApi(posts, page, username);
+    // Enrich posts via context.request (inherits cookies from context)
+    await enrichPostsWithApi(posts, context.request, username);
 
     // Fallback: if the latest post is still unenriched, navigate to its page
     if (posts.length > 0 && posts[0].likesCount === undefined) {
       await enrichLatestPostViaPage(posts[0], page, username);
     }
 
-    // Sort by timestamp descending so the latest post is first, not the pinned one
+    // Sort by timestamp descending
     posts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
     return posts.slice(0, 12);

@@ -28,47 +28,10 @@ services:
       timeout: 3s
       retries: 5
 
-  bot:
-    build:
-      context: .
-      dockerfile: apps/bot/Dockerfile
-    container_name: fastify-app-bot
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-    volumes:
-      - ./apps/bot/src:/app/apps/bot/src
-      - ./packages/shared/src:/app/packages/shared/src
-    command: ["pnpm", "--filter", "@app/bot", "dev:bot"]
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-
-  deliver:
-    build:
-      context: .
-      dockerfile: apps/bot/Dockerfile
-    container_name: fastify-app-deliver
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-    volumes:
-      - ./apps/bot/src:/app/apps/bot/src
-      - ./packages/shared/src:/app/packages/shared/src
-    command: ["pnpm", "--filter", "@app/bot", "dev:deliver"]
-    depends_on:
-      redis:
-        condition: service_healthy
-
   scraper:
     build:
       context: .
-      dockerfile: apps/scraper/Dockerfile
+      dockerfile: apps/scraper/Dockerfile.dev
     container_name: fastify-app-scraper
     restart: unless-stopped
     environment:
@@ -92,25 +55,6 @@ services:
         limits:
           memory: 2G
           cpus: '1.0'
-
-  scheduler:
-    build:
-      context: .
-      dockerfile: apps/bot/Dockerfile
-    container_name: fastify-app-scheduler
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
-    volumes:
-      - ./apps/scheduler/src:/app/apps/scheduler/src
-      - ./packages/shared/src:/app/packages/shared/src
-    command: ["pnpm", "--filter", "@app/scheduler", "dev"]
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
 
   bull-board:
     image: venatum/bull-board

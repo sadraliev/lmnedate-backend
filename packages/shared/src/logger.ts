@@ -11,6 +11,18 @@ export const createLogger = ({ name }: { name: string }): Logger => {
 
   const isDev = process.env.NODE_ENV !== 'production';
 
+  const fileTransport: pino.TransportTargetOptions = {
+    target: 'pino-roll',
+    options: {
+      file: `logs/${name}`,
+      frequency: 'daily',
+      dateFormat: 'yyyy-MM-dd',
+      limit: { count: 7 },
+      mkdir: true,
+    },
+    level,
+  };
+
   let transport: pino.TransportSingleOptions | pino.TransportMultiOptions | undefined;
 
   if (isDev) {
@@ -21,19 +33,11 @@ export const createLogger = ({ name }: { name: string }): Logger => {
           options: { colorize: true, translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' },
           level,
         },
-        {
-          target: 'pino-roll',
-          options: {
-            file: `logs/${name}`,
-            frequency: 'daily',
-            dateFormat: 'yyyy-MM-dd',
-            limit: { count: 7 },
-            mkdir: true,
-          },
-          level,
-        },
+        fileTransport,
       ],
     };
+  } else {
+    transport = { targets: [fileTransport] };
   }
 
   return pino({ name, level, transport });

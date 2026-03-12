@@ -12,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 import { Worker, Queue } from 'bullmq';
 import type { Job } from 'bullmq';
-import { Redis } from 'ioredis';
 import {
   QUEUE_NAMES,
   createRedisConnection,
@@ -33,7 +32,7 @@ import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.
 const logger = createLogger({ name: 'scraper' });
 
 // ---------------------------------------------------------------------------
-// Config from environment (no env.ts dependency)
+// Config from environment
 // ---------------------------------------------------------------------------
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27019/instagram-scraper';
@@ -43,31 +42,10 @@ const INSTAGRAM_USERNAME = process.env.INSTAGRAM_USERNAME ?? '';
 const INSTAGRAM_PASSWORD = process.env.INSTAGRAM_PASSWORD ?? '';
 
 // ---------------------------------------------------------------------------
-// Redis connection for session storage (with retry + event handlers)
-// ---------------------------------------------------------------------------
-let redis: Redis;
-
-const connectRedis = (): Redis => {
-  redis = new Redis(REDIS_URL, {
-    retryStrategy: (times) => {
-      const delay = Math.min(times * 500, 30_000);
-      logger.info({ attempt: times, delay }, 'Redis reconnecting');
-      return delay;
-    },
-    maxRetriesPerRequest: 3,
-  });
-  redis.on('error', (err) => logger.error({ err: err.message }, 'Redis error'));
-  redis.on('reconnecting', () => logger.info('Redis reconnecting...'));
-  logger.info('Connected to Redis');
-  return redis;
-};
-
-// ---------------------------------------------------------------------------
 // BullMQ Worker
 // ---------------------------------------------------------------------------
 const main = async () => {
-  connectRedis();
-  await initSession(redis, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
+  await initSession(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
 
   // Connect to MongoDB for post dedup
   await connectToDatabase(MONGODB_URI);
@@ -89,7 +67,7 @@ const main = async () => {
 
       try {
         const rawPosts = await withTimeout(
-          scrapeProfile(username, SCRAPE_TIMEOUT_MS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD, redis),
+          scrapeProfile(username, SCRAPE_TIMEOUT_MS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD),
           SCRAPE_TIMEOUT_MS + 10_000,
           `scrape @${username}`,
         );
@@ -186,7 +164,6 @@ const main = async () => {
     await deliverQueue.close();
     await closeBrowser();
     await closeDatabaseConnection();
-    await redis.quit();
     process.exit(0);
   };
 

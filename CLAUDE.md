@@ -3,18 +3,26 @@
 ## Monorepo Structure (pnpm workspaces)
 
 ```
-packages/shared/    → @app/shared  (queue names, job types, redis config)
-apps/bot/           → @app/bot     (Grammy bot + deliver worker)
-apps/scraper/       → @app/scraper (Playwright + BullMQ scraper)
-apps/api/           → @app/api     (Fastify dashboard + API)
+packages/shared/    → @app/shared  (queue names, job types, redis config, DB repos)
+apps/bot/           → @app/bot     (Grammy bot + deliver worker, separate processes)
+apps/scheduler/     → @app/scheduler (BullMQ poll scheduler)
+apps/scraper/       → @app/scraper (Playwright + BullMQ scraper worker, runs in Docker)
 scripts/            → utility scripts
 ```
 
 ## Commands
-- `pnpm dev:bot` / `pnpm dev:deliver` / `pnpm dev:scraper` / `pnpm dev:api`
+- `pnpm dev:bot` — run bot
+- `pnpm dev:deliver` — run deliver worker
+- `pnpm dev:scheduler` — run scheduler
+- `pnpm dev:scraper` — run scraper worker
+- `make dev` — run all 4 concurrently
+- `make up` — start infra (MongoDB, Redis, Bull Board, Scraper)
 - `pnpm -r lint` — type-check all packages
 - `pnpm -r test` — run all tests
-- `make up` / `make down` — Docker
+
+## Important
+- NEVER use the same Instagram account for dev and prod
+- Scraper architecture details are in README.md
 
 ## Background Tasks
 Before launching ANY background bash task (`run_in_background`):

@@ -4,13 +4,12 @@ Instagram scraper with Telegram delivery. Monitors public profiles, extracts pos
 
 ## Features
 
-- **Telegram bot** — `/update <username>` triggers scraping and delivers the latest post
-- **Instagram scraper** — Playwright-based with session management, login wall detection, and DOM/API fallbacks
-- **Post enrichment** — engagement data (likes, comments, views) via mobile feed API + page navigation fallback
+- **Telegram bot** — `/start`, `/update <username>`, `/stats`
+- **Instagram scraper** — Playwright-based with file-based session, login wall detection, and DOM/API fallbacks
+- **Post enrichment** — engagement data (likes, comments, views) via `context.request` API + page navigation fallback
 - **Job queues** — BullMQ for scrape and deliver pipelines with retry/backoff
-- **REST API** — Fastify dashboard with auth, Swagger docs, rate limiting
-- **Structured logging** — centralized pino logger with JSON in production, pretty-printed in dev, and daily-rotated log files
-- **Testing** — unit tests (Vitest) and E2E tests
+- **Single process bot** — bot + deliver worker + scheduler in one process
+- **Structured logging** — pino with JSON in production, pretty-printed in dev
 
 ## Quick Start
 
@@ -18,67 +17,140 @@ Instagram scraper with Telegram delivery. Monitors public profiles, extracts pos
 # Install dependencies
 pnpm install
 
-# Start infrastructure (Redis, Bull Board)
+# Start infrastructure (MongoDB, Redis, Bull Board, Scraper)
 make up
 
 # Copy and configure environment
 cp .env.example .env
 
-# Run all services
-make dev
+# Run bot natively (bot + deliver + scheduler)
+make dev-bot
 
-# Or individually in separate terminals
-make dev-bot        # Telegram bot
-make dev-deliver    # Deliver worker
-make dev-scraper    # Scraper worker
-make dev-api        # API server
+# Or run everything
+make dev
 ```
 
 ## Project Structure
 
 ```
-packages/shared/              # @app/shared — zero-dep shared library
+packages/shared/              # @app/shared — shared library
 ├── src/
 │   ├── logger.ts             # createLogger factory (pino)
-│   ├── redis.ts              # Redis connection with retry
+│   ├── redis.ts              # Redis connection config for BullMQ
 │   ├── queue-names.ts        # BullMQ queue name constants
 │   ├── job-types.ts          # ScrapeJobData, DeliverJobData
 │   ├── post-types.ts         # ScrapedPost, CarouselMediaItem
 │   ├── parser.ts             # Instagram JSON/HTML post extraction
-│   └── caption-utils.ts      # Hashtag/mention extraction
+│   ├── caption-utils.ts      # Hashtag/mention extraction
+│   └── database/             # MongoDB repositories (accounts, posts, subscriptions)
 
-apps/bot/                     # @app/bot — Telegram bot + deliver worker
+apps/bot/                     # @app/bot — unified process
 ├── src/
-│   ├── bot.ts                # Grammy long-polling (/start, /update)
-│   ├── deliver.ts            # BullMQ consumer → Telegram messages
+│   ├── main.ts               # Entrypoint: bot + deliver worker + scheduler
 │   └── bot-instance.ts       # Shared Grammy bot instance
 
-apps/scraper/                 # @app/scraper — Playwright scraper
+apps/scraper/                 # @app/scraper — Playwright scraper (runs in Docker)
 ├── src/
 │   ├── worker.ts             # BullMQ consumer, job processing
 │   ├── scrape.ts             # Browser lifecycle, profile scraping, enrichment
-│   ├── session.ts            # Instagram login + Redis session persistence
-│   └── parser.ts             # Post extraction (re-exports from shared)
+│   ├── session.ts            # Instagram login + file-based session persistence
+│   ├── parser.ts             # Post extraction (re-exports from shared)
+│   └── types.ts              # ScrapedPost type
 
-apps/api/                     # @app/api — Fastify REST API
-├── src/
-│   ├── server.ts             # Fastify app factory
-│   ├── modules/auth/         # Auth module (register, login, JWT, password reset)
-│   ├── modules/telegram/     # Telegram module (bot management)
-│   └── config/               # Environment, logger, Redis config
-
-scripts/                      # Utility scripts (not production code)
+scripts/                      # Utility scripts (trigger-poll, enqueue-scrape, etc.)
 ```
+
+## How the Scraper Works
+
+### Architecture
+
+```
+Bot process (native)                    Scraper (Docker + Playwright)
+┌──────────────────────┐                ┌──────────────────────┐
+│  Grammy bot          │                │  BullMQ worker       │
+│  Deliver worker      │  ◄── Redis ──► │  Playwright browser  │
+│  Scheduler (15 min)  │                │  File-based session  │
+└──────────────────────┘                └──────────────────────┘
+         │                                        │
+         └──────────── MongoDB ◄──────────────────┘
+```
+
+Scheduler (in bot) enqueues scrape jobs every 15 minutes. Scraper processes them,
+stores posts in MongoDB, enqueues deliver jobs. Bot's deliver worker sends posts
+to Telegram subscribers.
+
+### Browser Lifecycle
+
+One **Browser** instance per process (singleton via `getBrowser()`). Persists across
+jobs, recreated only on disconnect. Each **job** gets its own **BrowserContext**
+(lightweight, like an incognito tab) with session cookies from `ig-session.json`.
+
+```
+Browser (1 per process, reused across jobs)
+  └── BrowserContext (1 per job, loaded with cookies)
+        └── Page (1 per context, used for navigation + interception)
+```
+
+### Session Management
+
+Sessions are stored as files (`ig-session.json`) — Playwright `storageState` format
+(cookies + localStorage).
+
+- **Startup**: `initSession()` checks if file exists and is valid JSON → reuse
+- **No file**: `loginWithPlaywright()` fills login form → `context.storageState({path})` saves to file
+- **Login wall during scrape**: `refreshSession()` → re-login → retry once
+
+In Docker, session file is persisted via named volume (`scraper_sessions:/app/data`).
+
+### Scraping Pipeline (per job)
+
+1. **Navigate** to `instagram.com/{username}/`
+2. **Intercept API responses** (passive) — `page.on('response')` captures GraphQL/REST
+   calls that Instagram makes during page load → `extractPosts()` gets basic post data
+   (shortcode, mediaUrl, caption, mediaType)
+3. **Fallback extraction** if no API responses intercepted:
+   - Parse embedded JSON from HTML (`<script type="application/json">`)
+   - DOM extraction (`a[href*="/p/"]` links + img src)
+4. **Enrich via API** (active) — `enrichPostsWithApi()` uses `context.request.get()`
+   to call `i.instagram.com/api/v1/feed/user/{id}/`. Gets engagement metrics:
+   likesCount, commentsCount, videoViewsCount, videoUrl, carouselMedia, location
+5. **Fallback enrichment** — navigates to post page, extracts embedded
+   `xdt_api__v1__media__shortcode__web_info` JSON
+6. **Store** new posts in MongoDB (dedup by unique index on username+postId)
+7. **Deliver** — enqueue deliver jobs for all subscribers of that account
+
+> **Intercept vs Enrich**: interception captures what Instagram sends on page load
+> (post structure). Enrichment actively requests the API for engagement metrics that
+> aren't included in the page load responses.
+
+### Login Wall Detection
+
+If Instagram redirects to `/accounts/login/`:
+1. Close current BrowserContext
+2. `refreshSession()` — fresh Playwright login
+3. Retry `scrapeProfile()` once (`retry=false` prevents infinite loop)
+
+## Important: Instagram Accounts
+
+**NEVER use the same Instagram account for dev and prod.** Instagram detects concurrent
+sessions from different IPs/environments and blocks the account.
+
+- Dev: use a throwaway account in local `.env`
+- Prod: use a separate account in prod `.env` on EC2
+
+If an account gets blocked:
+1. Change password manually
+2. Log in from a real browser, pass any challenge/verification
+3. Delete `ig-session.json` (or `docker exec scraper rm /app/data/ig-session.json`)
+4. Restart scraper
 
 ## Scripts
 
 ```bash
 # Development
-make dev              # Run all services concurrently
-make dev-api          # API server with hot reload
-make dev-bot          # Telegram bot
-make dev-deliver      # Deliver worker
-make dev-scraper      # Scraper worker
+make dev              # Run bot + scraper concurrently
+make dev-bot          # Bot (bot + deliver + scheduler)
+make dev-scraper      # Scraper worker (Docker)
 
 # Build & Quality
 make build            # Build all packages
@@ -86,80 +158,34 @@ make lint             # Type-check all packages
 make test             # Run all tests
 
 # Docker
-make up               # Start Redis + Bull Board
+make up               # Start infra (MongoDB, Redis, Bull Board, Scraper)
 make down             # Stop containers
 make redis-cli        # Open Redis CLI
 make bull-board       # Open Bull Board in browser
-```
-
-## Testing
-
-```bash
-pnpm -r test              # All tests
-pnpm -r lint              # Type-check all packages
 ```
 
 ## Environment Variables
 
 Copy `.env.example` to `.env` and configure:
 
-| Variable              | Description                 | Default                        |
-|-----------------------|-----------------------------|--------------------------------|
-| `PORT`                | API server port             | `3000`                         |
-| `NODE_ENV`            | Environment                 | `development`                  |
-| `JWT_SECRET`          | JWT signing secret (32+)    | —                              |
-| `MONGODB_URI`         | MongoDB connection string   | `mongodb://localhost:27019/fastify-app` |
-| `REDIS_URL`           | Redis connection string     | `redis://localhost:6381`       |
-| `TELEGRAM_BOT_TOKEN`  | Telegram bot API token      | —                              |
-| `INSTAGRAM_USERNAME`  | Instagram login username    | —                              |
-| `INSTAGRAM_PASSWORD`  | Instagram login password    | —                              |
-| `LOG_LEVEL`           | Log level override          | `debug` (dev), `info` (prod)   |
-
-## Logging
-
-All apps use a shared pino logger from `@app/shared`:
-
-```typescript
-import { createLogger } from '@app/shared';
-
-const logger = createLogger({ name: 'my-service' });
-logger.info({ userId: 123 }, 'User logged in');
-```
-
-**Dev mode** — pretty-printed to stdout + daily-rotated JSON files in `logs/`:
-
-```
-logs/
-├── bot.2026-03-11.1.log
-├── scraper.2026-03-11.1.log
-├── deliver.2026-03-11.1.log
-└── api.2026-03-11.1.log
-```
-
-- Files rotate daily, 7-day retention
-- `logs/` is gitignored
-
-**Production** — JSON to stdout only (consumed by Docker/CloudWatch/etc.)
-
-Override the log level with `LOG_LEVEL`:
-
-```bash
-LOG_LEVEL=warn pnpm dev:bot
-```
+| Variable              | Description                 | Default                                    |
+|-----------------------|-----------------------------|--------------------------------------------|
+| `MONGODB_URI`         | MongoDB connection string   | `mongodb://localhost:27019/instagram-scraper` |
+| `REDIS_URL`           | Redis connection string     | `redis://localhost:6381`                   |
+| `TELEGRAM_BOT_TOKEN`  | Telegram bot API token      | —                                          |
+| `INSTAGRAM_USERNAME`  | Instagram login username    | —                                          |
+| `INSTAGRAM_PASSWORD`  | Instagram login password    | —                                          |
+| `SCRAPE_CONCURRENCY`  | Parallel scrape jobs        | `1`                                        |
+| `SCRAPE_TIMEOUT_MS`   | Scrape timeout per job      | `30000`                                    |
+| `IG_SESSION_PATH`     | Session file path           | `ig-session.json`                          |
 
 ## Tech Stack
 
-- [Fastify](https://fastify.dev/) — web framework
 - [Grammy](https://grammy.dev/) — Telegram bot framework
 - [Playwright](https://playwright.dev/) — browser automation
 - [BullMQ](https://bullmq.io/) — job queues
 - [Pino](https://getpino.io/) — structured logging
 - [MongoDB](https://www.mongodb.com/) — database
-- [Redis](https://redis.io/) — session storage + queue backend
-- [Zod](https://zod.dev/) — schema validation
+- [Redis](https://redis.io/) — queue backend
 - [Vitest](https://vitest.dev/) — testing
 - [TypeScript](https://www.typescriptlang.org/) — language
-
-## License
-
-ISC

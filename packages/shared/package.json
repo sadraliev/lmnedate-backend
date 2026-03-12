@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "mongodb": "^6.21.0",
-    "pino": "^10.2.0"
+    "pino": "^10.2.0",
+    "pino-roll": "^4.0.0"
   }
 }

@@ -33,24 +33,11 @@ services:
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    command: ["pnpm", "--filter", "@app/bot", "dev:bot"]
+    command: ["node", "--import", "tsx", "apps/bot/src/main.ts"]
     depends_on:
       redis:
         condition: service_healthy
       mongodb:
-        condition: service_healthy
-
-  deliver:
-    image: ${ECR_BOT_REPOSITORY_URL}:latest
-    container_name: fastify-app-deliver
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      REDIS_URL: redis://redis:6379
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    command: ["pnpm", "--filter", "@app/bot", "dev:deliver"]
-    depends_on:
-      redis:
         condition: service_healthy
 
   scraper:
@@ -66,6 +53,8 @@ services:
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
       INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD}
     command: ["node", "--import", "tsx", "src/worker.ts"]
+    volumes:
+      - scraper_sessions:/app/data
     depends_on:
       redis:
         condition: service_healthy
@@ -77,23 +66,10 @@ services:
           memory: 2G
           cpus: '1.0'
 
-  scheduler:
-    image: ${ECR_BOT_REPOSITORY_URL}:latest
-    container_name: fastify-app-scheduler
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
-    command: ["pnpm", "--filter", "@app/scheduler", "dev"]
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-
 volumes:
   mongo_data:
     driver: local
   redis_data:
+    driver: local
+  scraper_sessions:
     driver: local

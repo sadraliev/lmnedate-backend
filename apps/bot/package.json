@@ -6,6 +6,8 @@
   "scripts": {
     "dev:bot": "tsx --watch src/bot.ts",
     "dev:deliver": "tsx --watch src/deliver.ts",
+    "start:bot": "node --import tsx src/bot.ts",
+    "start:deliver": "node --import tsx src/deliver.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -13,6 +15,9 @@
     "bullmq": "^5.66.5",
     "dotenv": "^17.2.3",
     "grammy": "^1.41.1",
+    "ioredis": "^5.9.2"
+  },
+  "devDependencies": {
     "tsx": "^4.21.0"
   }
 }

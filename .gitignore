@@ -38,6 +38,10 @@ docker-compose.override.yml
 # Misc
 .cache/
 
+# Scraper session
+ig-session.json
+data/
+
 # Deployment artifacts
 deploy.tar.gz
 *.tar.gz

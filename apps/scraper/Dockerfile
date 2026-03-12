@@ -9,4 +9,6 @@ FROM node:24-slim
 WORKDIR /app
 COPY --from=build /prod/scraper .
 RUN npx playwright install --with-deps chromium
+RUN mkdir -p /app/data
+ENV IG_SESSION_PATH=/app/data/ig-session.json
 CMD ["node", "--import", "tsx", "src/worker.ts"]
