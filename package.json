@@ -2,9 +2,8 @@
   "name": "instagram-scraper",
   "private": true,
   "scripts": {
-    "dev:bot": "pnpm --filter @app/bot dev:bot",
-    "dev:deliver": "pnpm --filter @app/bot dev:deliver",
-    "dev:scheduler": "pnpm --filter @app/scheduler dev",
+    "dev:bot": "pnpm --filter @app/bot dev",
+    "dev:workers": "pnpm --filter @app/workers dev",
     "dev:scraper": "pnpm --filter @app/scraper dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",

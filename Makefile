@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-bot dev-scraper build lint test up down docker-logs redis-cli bull-board clean
+.PHONY: help install dev dev-bot dev-workers dev-scraper build lint test up down docker-logs redis-cli bull-board clean
 
 .DEFAULT_GOAL := help
 
@@ -29,18 +29,15 @@ setup: install ## Initial setup (install + create .env)
 	fi
 
 # Development
-dev: ## Run bot + deliver + scheduler + scraper concurrently
-	@pnpm exec concurrently -n bot,deliver,scheduler,scraper -c blue,green,yellow,cyan \
-		"pnpm dev:bot" "pnpm dev:deliver" "pnpm dev:scheduler" "pnpm dev:scraper"
+dev: ## Run bot + workers + scraper concurrently
+	@pnpm exec concurrently -n bot,workers,scraper -c blue,green,cyan \
+		"pnpm dev:bot" "pnpm dev:workers" "pnpm dev:scraper"
 
 dev-bot: ## Run bot
 	@pnpm dev:bot
 
-dev-deliver: ## Run deliver worker
-	@pnpm dev:deliver
-
-dev-scheduler: ## Run scheduler
-	@pnpm dev:scheduler
+dev-workers: ## Run workers (deliver + scheduler)
+	@pnpm dev:workers
 
 dev-scraper: ## Run scraper worker
 	@pnpm dev:scraper

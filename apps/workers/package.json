@@ -1,20 +1,22 @@
 {
-  "name": "@app/scheduler",
+  "name": "@app/workers",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --watch src/scheduler.ts",
-    "start": "node --import tsx src/scheduler.ts",
+    "dev": "tsx --watch src/main.ts",
+    "start": "node --import tsx src/main.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@app/shared": "workspace:*",
     "bullmq": "^5.66.5",
     "dotenv": "^17.2.3",
+    "grammy": "^1.41.1",
     "ioredis": "^5.9.2"
   },
   "devDependencies": {
+    "@app/tsconfig": "workspace:*",
     "tsx": "^4.21.0"
   }
 }

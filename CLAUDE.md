@@ -3,19 +3,18 @@
 ## Monorepo Structure (pnpm workspaces)
 
 ```
-packages/shared/    → @app/shared  (queue names, job types, redis config, DB repos)
-apps/bot/           → @app/bot     (Grammy bot + deliver worker, separate processes)
-apps/scheduler/     → @app/scheduler (BullMQ poll scheduler)
-apps/scraper/       → @app/scraper (Playwright + BullMQ scraper worker, runs in Docker)
-scripts/            → utility scripts
+packages/shared/    → @app/shared    (queue names, job types, redis config, DB repos)
+apps/bot/           → @app/bot       (Grammy Telegram bot, long-polling)
+apps/workers/       → @app/workers   (BullMQ deliver + scheduler, single process)
+apps/scraper/       → @app/scraper   (Playwright + BullMQ scraper worker, runs in Docker)
+tooling/tsconfig/   → @app/tsconfig  (shared TypeScript config)
 ```
 
 ## Commands
 - `pnpm dev:bot` — run bot
-- `pnpm dev:deliver` — run deliver worker
-- `pnpm dev:scheduler` — run scheduler
+- `pnpm dev:workers` — run deliver + scheduler workers
 - `pnpm dev:scraper` — run scraper worker
-- `make dev` — run all 4 concurrently
+- `make dev` — run all 3 concurrently
 - `make up` — start infra (MongoDB, Redis, Bull Board, Scraper)
 - `pnpm -r lint` — type-check all packages
 - `pnpm -r test` — run all tests

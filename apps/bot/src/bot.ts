@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 
+import { Bot } from 'grammy';
 import {
   createLogger,
   connectToDatabase,
@@ -21,14 +22,21 @@ import {
   addSubscription,
   findOrCreateAccount,
 } from '@app/shared';
-import { bot } from './bot-instance.js';
 
 const logger = createLogger({ name: 'bot' });
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (!TELEGRAM_BOT_TOKEN) {
+  logger.fatal('TELEGRAM_BOT_TOKEN is required');
+  process.exit(1);
+}
+
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27019/instagram-scraper';
+
+const bot = new Bot(TELEGRAM_BOT_TOKEN);
 
 bot.command('start', async (ctx) => {
   logger.info({ chatId: ctx.chat.id }, '/start command received');

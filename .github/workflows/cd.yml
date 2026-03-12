@@ -28,6 +28,9 @@ jobs:
           - image: bot
             dockerfile: apps/bot/Dockerfile
             ecr_url_secret: ECR_BOT_REPOSITORY_URL
+          - image: workers
+            dockerfile: apps/workers/Dockerfile
+            ecr_url_secret: ECR_WORKERS_REPOSITORY_URL
           - image: scraper
             dockerfile: apps/scraper/Dockerfile
             ecr_url_secret: ECR_SCRAPER_REPOSITORY_URL
@@ -91,7 +94,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL,ECR_PASSWORD,ECR_REGISTRY
+          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_WORKERS_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL,ECR_PASSWORD,ECR_REGISTRY
           script: |
             cd ~/app
             cat > .env <<EOF
@@ -99,6 +102,7 @@ jobs:
             INSTAGRAM_USERNAME=$INSTAGRAM_USERNAME
             INSTAGRAM_PASSWORD=$INSTAGRAM_PASSWORD
             ECR_BOT_REPOSITORY_URL=$ECR_BOT_REPOSITORY_URL
+            ECR_WORKERS_REPOSITORY_URL=$ECR_WORKERS_REPOSITORY_URL
             ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
             EOF
             echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
@@ -119,6 +123,7 @@ jobs:
           INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
           INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
           ECR_BOT_REPOSITORY_URL: ${{ secrets.ECR_BOT_REPOSITORY_URL }}
+          ECR_WORKERS_REPOSITORY_URL: ${{ secrets.ECR_WORKERS_REPOSITORY_URL }}
           ECR_SCRAPER_REPOSITORY_URL: ${{ secrets.ECR_SCRAPER_REPOSITORY_URL }}
           ECR_PASSWORD: ${{ steps.ecr.outputs.password }}
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}

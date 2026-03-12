@@ -8,7 +8,7 @@ Instagram scraper with Telegram delivery. Monitors public profiles, extracts pos
 - **Instagram scraper** — Playwright-based with file-based session, login wall detection, and DOM/API fallbacks
 - **Post enrichment** — engagement data (likes, comments, views) via `context.request` API + page navigation fallback
 - **Job queues** — BullMQ for scrape and deliver pipelines with retry/backoff
-- **Single process bot** — bot + deliver worker + scheduler in one process
+- **Separate workers process** — deliver worker + scheduler in a dedicated process
 - **Structured logging** — pino with JSON in production, pretty-printed in dev
 
 ## Quick Start
@@ -23,7 +23,7 @@ make up
 # Copy and configure environment
 cp .env.example .env
 
-# Run bot natively (bot + deliver + scheduler)
+# Run bot only
 make dev-bot
 
 # Or run everything
@@ -44,10 +44,13 @@ packages/shared/              # @app/shared — shared library
 │   ├── caption-utils.ts      # Hashtag/mention extraction
 │   └── database/             # MongoDB repositories (accounts, posts, subscriptions)
 
-apps/bot/                     # @app/bot — unified process
+apps/bot/                     # @app/bot — Telegram bot (long-polling)
 ├── src/
-│   ├── main.ts               # Entrypoint: bot + deliver worker + scheduler
-│   └── bot-instance.ts       # Shared Grammy bot instance
+│   └── bot.ts                # Entrypoint: Grammy bot with /start, /update, /stats
+
+apps/workers/                 # @app/workers — BullMQ workers (deliver + scheduler)
+├── src/
+│   └── main.ts               # Entrypoint: deliver worker + poll scheduler
 
 apps/scraper/                 # @app/scraper — Playwright scraper (runs in Docker)
 ├── src/
@@ -57,7 +60,8 @@ apps/scraper/                 # @app/scraper — Playwright scraper (runs in Doc
 │   ├── parser.ts             # Post extraction (re-exports from shared)
 │   └── types.ts              # ScrapedPost type
 
-scripts/                      # Utility scripts (trigger-poll, enqueue-scrape, etc.)
+tooling/tsconfig/             # @app/tsconfig — shared TypeScript config
+│   └── base.json             # Base tsconfig extended by all packages
 ```
 
 ## How the Scraper Works
@@ -65,18 +69,18 @@ scripts/                      # Utility scripts (trigger-poll, enqueue-scrape, e
 ### Architecture
 
 ```
-Bot process (native)                    Scraper (Docker + Playwright)
-┌──────────────────────┐                ┌──────────────────────┐
-│  Grammy bot          │                │  BullMQ worker       │
-│  Deliver worker      │  ◄── Redis ──► │  Playwright browser  │
-│  Scheduler (15 min)  │                │  File-based session  │
-└──────────────────────┘                └──────────────────────┘
-         │                                        │
-         └──────────── MongoDB ◄──────────────────┘
+Bot process                Workers process              Scraper (Docker + Playwright)
+┌────────────────┐         ┌──────────────────────┐     ┌──────────────────────┐
+│  Grammy bot    │         │  Deliver worker      │     │  BullMQ worker       │
+│  (long-polling)│         │  Scheduler (15 min)  │◄──► │  Playwright browser  │
+└────────────────┘         └──────────────────────┘     │  File-based session  │
+         │                          │  Redis             └──────────────────────┘
+         │                          │                             │
+         └──────────── MongoDB ◄────┴─────────────────────────────┘
 ```
 
-Scheduler (in bot) enqueues scrape jobs every 15 minutes. Scraper processes them,
-stores posts in MongoDB, enqueues deliver jobs. Bot's deliver worker sends posts
+Scheduler (in workers) enqueues scrape jobs every 15 minutes. Scraper processes them,
+stores posts in MongoDB, enqueues deliver jobs. Workers' deliver worker sends posts
 to Telegram subscribers.
 
 ### Browser Lifecycle
@@ -148,8 +152,9 @@ If an account gets blocked:
 
 ```bash
 # Development
-make dev              # Run bot + scraper concurrently
-make dev-bot          # Bot (bot + deliver + scheduler)
+make dev              # Run bot + workers + scraper concurrently
+make dev-bot          # Telegram bot only
+make dev-workers      # Deliver + scheduler workers
 make dev-scraper      # Scraper worker (Docker)
 
 # Build & Quality

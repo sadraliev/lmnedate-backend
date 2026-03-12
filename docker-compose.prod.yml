@@ -30,10 +30,23 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    command: ["node", "--import", "tsx", "apps/bot/src/bot.ts"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  workers:
+    image: ${ECR_WORKERS_REPOSITORY_URL}:latest
+    container_name: fastify-app-workers
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    command: ["node", "--import", "tsx", "apps/bot/src/main.ts"]
+    command: ["node", "--import", "tsx", "apps/workers/src/main.ts"]
     depends_on:
       redis:
         condition: service_healthy

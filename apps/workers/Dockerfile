@@ -4,9 +4,9 @@ WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY tooling/tsconfig/package.json tooling/tsconfig/
 COPY packages/shared/package.json packages/shared/
-COPY apps/bot/package.json apps/bot/
+COPY apps/workers/package.json apps/workers/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile --prod
 COPY tooling/tsconfig/ tooling/tsconfig/
 COPY packages/shared/ packages/shared/
-COPY apps/bot/ apps/bot/
-CMD ["node", "--import", "tsx", "apps/bot/src/bot.ts"]
+COPY apps/workers/ apps/workers/
+CMD ["node", "--import", "tsx", "apps/workers/src/main.ts"]
