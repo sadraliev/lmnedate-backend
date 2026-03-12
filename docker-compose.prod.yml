@@ -29,6 +29,7 @@ services:
     container_name: fastify-app-bot
     restart: unless-stopped
     environment:
+      NODE_ENV: production
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
@@ -44,6 +45,7 @@ services:
     container_name: fastify-app-deliver
     restart: unless-stopped
     environment:
+      NODE_ENV: production
       REDIS_URL: redis://redis:6379
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     command: ["pnpm", "--filter", "@app/bot", "dev:deliver"]
@@ -56,6 +58,7 @@ services:
     container_name: fastify-app-scraper
     restart: unless-stopped
     environment:
+      NODE_ENV: production
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       SCRAPE_CONCURRENCY: "1"
@@ -79,6 +82,7 @@ services:
     container_name: fastify-app-scheduler
     restart: unless-stopped
     environment:
+      NODE_ENV: production
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
     command: ["pnpm", "--filter", "@app/scheduler", "dev"]
