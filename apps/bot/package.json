@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx --watch src/bot.ts",
     "start": "node --import tsx src/bot.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "build": "tsc"
   },
   "dependencies": {
     "@app/shared": "workspace:*",
