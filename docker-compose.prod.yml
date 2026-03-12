@@ -32,7 +32,6 @@ services:
       NODE_ENV: production
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    command: ["node", "--import", "tsx", "apps/bot/src/bot.ts"]
     depends_on:
       mongodb:
         condition: service_healthy
@@ -46,7 +45,6 @@ services:
       REDIS_URL: redis://redis:6379
       MONGODB_URI: mongodb://mongodb:27017/instagram-scraper
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    command: ["node", "--import", "tsx", "apps/workers/src/main.ts"]
     depends_on:
       redis:
         condition: service_healthy
@@ -65,7 +63,6 @@ services:
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
       INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD}
-    command: ["node", "--import", "tsx", "src/worker.ts"]
     volumes:
       - scraper_sessions:/app/data
     depends_on:
