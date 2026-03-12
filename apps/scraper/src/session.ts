@@ -52,8 +52,13 @@ export const loginWithPlaywright = async (
   browser: Browser,
   username: string,
   password: string,
+  userAgent?: string,
 ): Promise<string> => {
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    ...(userAgent ? { userAgent } : {}),
+    viewport: { width: 1280, height: 900 },
+    locale: 'en-US',
+  });
   const page = await context.newPage();
 
   try {

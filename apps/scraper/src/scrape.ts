@@ -11,11 +11,17 @@ import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'scraper' });
 
+const COMMON_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
 let browser: Browser | null = null;
 
 export const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
   browser.on('disconnected', () => {
     logger.info('Browser disconnected, will relaunch on next job');
     browser = null;
@@ -66,7 +72,7 @@ export const initSession = async (
 
   logger.info({ igUsername }, 'No cached session — logging in');
   const b = await getBrowser();
-  const state = await loginWithPlaywright(b, igUsername, igPassword);
+  const state = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
   await saveSession(redis, igUsername, state);
   cachedStorageState = state;
 };
@@ -78,7 +84,7 @@ export const refreshSession = async (
 ): Promise<void> => {
   logger.info({ igUsername }, 'Refreshing session');
   const b = await getBrowser();
-  const state = await loginWithPlaywright(b, igUsername, igPassword);
+  const state = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
   await saveSession(redis, igUsername, state);
   cachedStorageState = state;
 };
@@ -259,8 +265,7 @@ export const scrapeProfile = async (
     const b = await getBrowser();
 
     const contextOptions: Record<string, unknown> = {
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent: COMMON_USER_AGENT,
       viewport: { width: 1280, height: 900 },
       locale: 'en-US',
     };
@@ -308,14 +313,26 @@ export const scrapeProfile = async (
       logger.debug({ username }, 'networkidle timeout, continuing');
     });
 
-    // Detect login wall — if redirected to login page, re-auth and retry once
+    // Debug: log page state
     const currentUrl = page.url();
+    const pageTitle = await page.title();
+    logger.info({ username, url: currentUrl, title: pageTitle }, 'Page loaded');
+
+    // Detect login wall — if redirected to login page, re-auth and retry once
     if (currentUrl.includes('/accounts/login') && retry && igUsername) {
       logger.info({ username }, 'Login wall detected — re-authenticating');
       await context.close();
       context = null;
       await refreshSession(redis, igUsername, igPassword);
       return scrapeProfile(username, timeoutMs, igUsername, igPassword, redis, false);
+    }
+
+    // Scroll down to trigger lazy loading of posts grid
+    if (posts.length === 0) {
+      await page.evaluate(() => window.scrollBy(0, 800));
+      await page.waitForTimeout(3_000);
+      // Wait for any new network requests triggered by scroll
+      await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
     }
 
     if (posts.length === 0) {
@@ -325,6 +342,20 @@ export const scrapeProfile = async (
 
     // Fallback: extract posts directly from the DOM
     if (posts.length === 0) {
+      // Debug: log page structure to diagnose rendering issues
+      const debugInfo = await page.evaluate(() => {
+        const allLinks = document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"]');
+        const articles = document.querySelectorAll('article');
+        const mainContent = document.querySelector('main');
+        const bodyText = document.body?.innerText?.slice(0, 500) ?? '';
+        return {
+          postLinks: allLinks.length,
+          articles: articles.length,
+          hasMain: !!mainContent,
+          bodyPreview: bodyText,
+        };
+      });
+      logger.info({ username, ...debugInfo }, 'Debug: page DOM state');
       logger.info({ username }, 'No posts from intercept/HTML, trying DOM extraction');
       const domPosts = await page.$$eval(
         'a[href*="/p/"], a[href*="/reel/"]',
