@@ -1,10 +1,12 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:24-alpine AS build
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY packages/shared/package.json packages/shared/
-COPY apps/scraper/package.json apps/scraper/
-RUN pnpm install --frozen-lockfile --prod
-COPY packages/shared/ packages/shared/
-COPY apps/scraper/ apps/scraper/
-CMD ["pnpm", "--filter", "@app/scraper", "dev"]
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm --filter @app/scraper --prod deploy /prod/scraper
+
+FROM node:24-slim
+WORKDIR /app
+COPY --from=build /prod/scraper .
+RUN npx playwright install --with-deps chromium
+CMD ["node", "--import", "tsx", "src/worker.ts"]

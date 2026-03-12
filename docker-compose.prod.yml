@@ -62,7 +62,7 @@ services:
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
       INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD}
-    command: ["pnpm", "--filter", "@app/scraper", "dev"]
+    command: ["node", "--import", "tsx", "src/worker.ts"]
     depends_on:
       redis:
         condition: service_healthy
