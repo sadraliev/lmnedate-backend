@@ -108,6 +108,15 @@ export const recordOutcome = async (outcome: Outcome): Promise<void> => {
 };
 
 /**
+ * Trigger an immediate emergency pause (for critical ban signals).
+ */
+export const triggerEmergencyPause = async (): Promise<void> => {
+  if (!redis) return;
+  const pauseUntil = Date.now() + randomPause();
+  await redis.set(KEY_PAUSED, String(pauseUntil));
+};
+
+/**
  * Returns ms remaining in emergency pause, or 0 if not paused.
  */
 export const getPauseRemaining = async (): Promise<number> => {

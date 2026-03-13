@@ -10,6 +10,7 @@ import { loadSession, loginWithPlaywright } from './session.js';
 import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
 import { humanScroll } from './humanizer.js';
 import { createLogger } from '@app/shared';
+import { checkUrlBanSignals, checkResponseBanSignals, checkDomBanSignals, BanDetectedError, type BanSignal } from './ban-detection.js';
 
 const logger = createLogger({ name: 'scraper' });
 
@@ -301,6 +302,7 @@ export const scrapeProfile = async (
     const page = await context.newPage();
     await applyStealthScripts(page);
     const posts: ScrapedPost[] = [];
+    let detectedBanSignal: BanSignal | null = null;
 
     page.on('response', async (response) => {
       const url = response.url();
@@ -315,6 +317,14 @@ export const scrapeProfile = async (
         const contentType = response.headers()['content-type'] ?? '';
         if (!contentType.includes('json') && !contentType.includes('text')) return;
         const json = await response.json();
+
+        const banSignal = checkResponseBanSignals(response.status(), json);
+        if (banSignal) {
+          logger.warn({ username, url, ...banSignal }, 'Ban signal in response');
+          detectedBanSignal = banSignal;
+          return;
+        }
+
         extractPosts(json, username, posts);
       } catch {
         // Not JSON — ignore
@@ -343,10 +353,34 @@ export const scrapeProfile = async (
       return scrapeProfile(username, timeoutMs, igUsername, igPassword, false);
     }
 
+    // Detect ban signals from URL (challenge, suspended, consent)
+    const urlBan = checkUrlBanSignals(currentUrl);
+    if (urlBan) {
+      logger.warn({ username, ...urlBan }, 'Ban signal detected');
+      throw new BanDetectedError(urlBan);
+    }
+
+    // Check if response handler caught a ban signal
+    if (detectedBanSignal) {
+      throw new BanDetectedError(detectedBanSignal);
+    }
+
     // Scroll down to trigger lazy loading
     if (posts.length === 0) {
       await humanScroll(page);
       await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+    }
+
+    // Check for CAPTCHA after page interaction
+    const domBan = await checkDomBanSignals(page);
+    if (domBan) {
+      logger.warn({ username, ...domBan }, 'Ban signal detected in DOM');
+      throw new BanDetectedError(domBan);
+    }
+
+    // Re-check response ban signal after scroll triggered new requests
+    if (detectedBanSignal) {
+      throw new BanDetectedError(detectedBanSignal);
     }
 
     if (posts.length === 0) {

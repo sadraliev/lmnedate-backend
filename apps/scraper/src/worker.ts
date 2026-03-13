@@ -10,7 +10,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
-import { Worker, Queue, DelayedError } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import type { Job } from 'bullmq';
 import {
   QUEUE_NAMES,
@@ -28,7 +28,8 @@ import {
 } from '@app/shared';
 import type { ScrapeJobData, DeliverJobData } from '@app/shared';
 import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.js';
-import { initThrottle, closeThrottle, recordOutcome, getPauseRemaining } from './throttle.js';
+import { initThrottle, closeThrottle, recordOutcome, getPauseRemaining, triggerEmergencyPause } from './throttle.js';
+import { BanDetectedError } from './ban-detection.js';
 
 const logger = createLogger({ name: 'scraper' });
 
@@ -71,9 +72,8 @@ const main = async () => {
       // Adaptive throttle — honour emergency pause
       const pauseMs = await getPauseRemaining();
       if (pauseMs > 0) {
-        jobLog.info({ pauseMs }, 'Emergency pause active — delaying job');
-        await job.moveToDelayed(Date.now() + pauseMs, job.token!);
-        throw new DelayedError('Emergency pause active');
+        jobLog.info({ pauseMs }, 'Emergency pause active — skipping job');
+        return;
       }
 
       try {
@@ -150,6 +150,24 @@ const main = async () => {
         await updateLastScraped(username);
         jobLog.info({ delivered: newPosts.length, to: subscribers.length }, 'Scrape complete');
       } catch (error) {
+        // Structured ban detection (from ban-detection.ts)
+        if (error instanceof BanDetectedError) {
+          const { signal } = error;
+          const outcome = signal.type === 'rate_limited' ? 'rate_limited' : 'banned';
+          await recordOutcome(outcome);
+
+          // Critical signals → immediate emergency pause
+          if (signal.severity === 'critical') {
+            await triggerEmergencyPause();
+            jobLog.warn({ signal }, 'Critical ban signal — emergency pause triggered');
+          } else {
+            jobLog.warn({ signal }, 'Ban detected');
+          }
+
+          throw error;
+        }
+
+        // Fallback: string-based detection for unstructured errors (Playwright, network, etc.)
         const message = error instanceof Error ? error.message : String(error);
         const lower = message.toLowerCase();
 
