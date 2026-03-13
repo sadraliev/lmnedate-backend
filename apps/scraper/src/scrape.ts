@@ -13,21 +13,32 @@ import { createLogger } from '@app/shared';
 const logger = createLogger({ name: 'scraper' });
 
 let browser: Browser | null = null;
+let launchPromise: Promise<Browser> | null = null;
 
 export const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
-  browser = await chromium.launch({
+  if (launchPromise) return launchPromise;
+
+  launchPromise = chromium.launch({
     headless: true,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--enable-unsafe-swiftshader',
     ],
+  }).then((b) => {
+    browser = b;
+    b.on('disconnected', () => {
+      logger.info('Browser disconnected, will relaunch on next job');
+      browser = null;
+    });
+    launchPromise = null;
+    return b;
+  }).catch((err) => {
+    launchPromise = null;
+    throw err;
   });
-  browser.on('disconnected', () => {
-    logger.info('Browser disconnected, will relaunch on next job');
-    browser = null;
-  });
-  return browser;
+
+  return launchPromise;
 };
 
 export const closeBrowser = async (): Promise<void> => {
@@ -75,13 +86,21 @@ export const initSession = async (
   cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword);
 };
 
+let refreshPromise: Promise<void> | null = null;
+
 export const refreshSession = async (
   igUsername: string,
   igPassword: string,
 ): Promise<void> => {
-  logger.info({ igUsername }, 'Refreshing session');
-  const b = await getBrowser();
-  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword);
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    logger.info({ igUsername }, 'Refreshing session');
+    const b = await getBrowser();
+    cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword);
+  })().finally(() => { refreshPromise = null; });
+
+  return refreshPromise;
 };
 
 /**
@@ -384,6 +403,8 @@ export const scrapeProfile = async (
 
     return posts.slice(0, 12);
   } finally {
-    if (context) await context.close().catch(() => {});
+    if (context) await context.close().catch((err) => {
+      logger.warn({ err: err instanceof Error ? err.message : err }, 'Failed to close context');
+    });
   }
 };

@@ -169,6 +169,18 @@ const main = async () => {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+
+  process.on('uncaughtException', async (err) => {
+    logger.fatal({ err }, 'Uncaught exception — closing browser');
+    await closeBrowser().catch(() => {});
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', async (err) => {
+    logger.fatal({ err }, 'Unhandled rejection — closing browser');
+    await closeBrowser().catch(() => {});
+    process.exit(1);
+  });
 };
 
 main().catch((err) => {
