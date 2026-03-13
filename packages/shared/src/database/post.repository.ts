@@ -17,15 +17,14 @@ export const storeNewPosts = async (posts: Omit<InstagramPost, '_id'>[]): Promis
   const stored: InstagramPost[] = [];
 
   for (const post of posts) {
-    try {
-      const result = await db.collection<InstagramPost>('instagram_posts').insertOne(post as InstagramPost);
-      stored.push({ ...post, _id: result.insertedId } as InstagramPost);
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes('duplicate key')) {
-        continue;
-      }
-      throw error;
-    }
+    const { instagramUsername, postId, ...rest } = post;
+    const result = await db.collection<InstagramPost>('instagram_posts').updateOne(
+      { instagramUsername, postId },
+      { $set: rest, $setOnInsert: { instagramUsername, postId } },
+      { upsert: true },
+    );
+    const _id = result.upsertedId ?? (await db.collection<InstagramPost>('instagram_posts').findOne({ instagramUsername, postId }))?._id;
+    if (_id) stored.push({ ...post, _id } as InstagramPost);
   }
 
   return stored;

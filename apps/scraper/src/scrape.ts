@@ -151,9 +151,14 @@ const enrichPostsWithApi = async (
 
     const feedJson = await feedRes.json();
 
+    const apiItemCount = Array.isArray(feedJson.items) ? feedJson.items.length : 0;
+    logger.debug({ username, feedKeys: Object.keys(feedJson), apiItemCount }, 'Feed API response shape');
+
     // Parse feed items into enriched posts
     const enrichedPosts: ScrapedPost[] = [];
     extractPosts(feedJson, username, enrichedPosts);
+
+    logger.debug({ username, parsedCount: enrichedPosts.length, sample: enrichedPosts[0] ? { postId: enrichedPosts[0].postId, likesCount: enrichedPosts[0].likesCount, commentsCount: enrichedPosts[0].commentsCount, caption: enrichedPosts[0].caption?.slice(0, 80) } : null }, 'Parsed enrichment posts');
 
     // Build a lookup by postId (shortcode) for fast matching
     const enrichedByCode = new Map<string, ScrapedPost>();
@@ -161,6 +166,8 @@ const enrichPostsWithApi = async (
       const match = ep.permalink.match(/\/(p|reel)\/([^/]+)/);
       if (match) enrichedByCode.set(match[2], ep);
     }
+
+    logger.debug({ username, enrichedCodes: [...enrichedByCode.keys()], unenrichedIds: unenriched.map((p) => p.postId) }, 'Matching enriched → unenriched');
 
     let count = 0;
     for (const post of unenriched) {
@@ -182,7 +189,7 @@ const enrichPostsWithApi = async (
       count++;
     }
 
-    logger.info({ username, enriched: count, total: unenriched.length }, 'Enrichment complete');
+    logger.info({ username, apiItems: apiItemCount, parsed: enrichedPosts.length, matched: count, total: unenriched.length }, 'Enrichment complete');
   } catch (err) {
     logger.warn({ username, err: err instanceof Error ? err.message : err }, 'Enrichment failed');
   }
@@ -398,8 +405,13 @@ export const scrapeProfile = async (
       await enrichLatestPostViaPage(posts[0], page, username);
     }
 
-    // Sort by timestamp descending
-    posts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    // Prefer enriched posts, then sort by timestamp descending
+    posts.sort((a, b) => {
+      const aEnriched = a.likesCount !== undefined ? 1 : 0;
+      const bEnriched = b.likesCount !== undefined ? 1 : 0;
+      if (aEnriched !== bEnriched) return bEnriched - aEnriched;
+      return b.timestamp.getTime() - a.timestamp.getTime();
+    });
 
     return posts.slice(0, 12);
   } finally {

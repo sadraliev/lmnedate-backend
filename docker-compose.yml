@@ -41,9 +41,11 @@ services:
       SCRAPE_TIMEOUT_MS: "30000"
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
       INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD:-}
+      IG_SESSION_PATH: /app/data/ig-session.json
     volumes:
       - ./apps/scraper/src:/app/apps/scraper/src
       - ./packages/shared/src:/app/packages/shared/src
+      - scraper_sessions:/app/data
     command: ["pnpm", "--filter", "@app/scraper", "dev"]
     depends_on:
       redis:
@@ -78,4 +80,6 @@ volumes:
   mongo_data:
     driver: local
   redis_data:
+    driver: local
+  scraper_sessions:
     driver: local

@@ -8,4 +8,5 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store pnpm install
 RUN pnpm --filter @app/scraper exec playwright install --with-deps chromium
 COPY packages/shared/ packages/shared/
 COPY apps/scraper/ apps/scraper/
+RUN mkdir -p /app/data
 CMD ["pnpm", "--filter", "@app/scraper", "dev"]

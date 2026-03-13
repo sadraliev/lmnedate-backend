@@ -122,4 +122,4 @@ These keys have **no TTL** by design. The learned interval must survive restarts
 
 - **Never use the same Instagram account for dev and prod** — Instagram binds the session to an IP and will block it when switching.
 - **`SCRAPE_CONCURRENCY`** — at values > 1, all the race conditions above become relevant. The mutexes solve the problem, but for maximum reliability keep concurrency at 1.
-- **Session is stored on disk** — `cachedSessionPath` points to a cookies file. When the container restarts, the session is lost and a new login is required.
+- **Session is stored on disk** — `cachedSessionPath` points to a cookies file. In both dev and prod, the session is persisted via a named Docker volume (`scraper_sessions:/app/data`), so it survives container restarts without requiring a fresh login.
