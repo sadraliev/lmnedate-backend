@@ -52,7 +52,7 @@ apps/workers/                 # @app/workers — BullMQ workers (deliver + sched
 ├── src/
 │   └── main.ts               # Entrypoint: deliver worker + poll scheduler
 
-apps/scraper/                 # @app/scraper — Playwright scraper (runs in Docker)
+apps/scraper/                 # @app/scraper — Playwright scraper
 ├── src/
 │   ├── worker.ts             # BullMQ consumer, job processing
 │   ├── scrape.ts             # Browser lifecycle, profile scraping, enrichment
@@ -70,14 +70,18 @@ tooling/tsconfig/             # @app/tsconfig — shared TypeScript config
 ### Architecture
 
 ```
-Bot process                Workers process              Scraper (Docker + Playwright)
+Bot process                Workers process              Scraper process
 ┌────────────────┐         ┌──────────────────────┐     ┌──────────────────────┐
 │  Grammy bot    │         │  Deliver worker      │     │  BullMQ worker       │
-│  (long-polling)│         │  Scheduler (15 min)  │◄──► │  Playwright browser  │
+│  (long-polling)│         │  Scheduler (15 min)  │◄──► │  connects to browser │
 └────────────────┘         └──────────────────────┘     │  File-based session  │
          │                          │  Redis             │  Adaptive throttle   │
+         │                          │                    └──────────┬───────────┘
+         │                          │                               │ WebSocket
+         │                          │                    ┌──────────┴───────────┐
+         │                          │                    │  Playwright (Docker) │
+         │                          │                    │  Chromium browser    │
          │                          │                    └──────────────────────┘
-         │                          │                             │
          └──────────── MongoDB ◄────┴─────────────────────────────┘
 ```
 
@@ -106,7 +110,7 @@ Sessions are stored as files (`ig-session.json`) — Playwright `storageState` f
 - **No file**: `loginWithPlaywright()` fills login form → `context.storageState({path})` saves to file
 - **Login wall during scrape**: `refreshSession()` → re-login → retry once
 
-In Docker, session file is persisted via named volume (`scraper_sessions:/app/data`).
+Session file persists on the host filesystem (`IG_SESSION_PATH` env, defaults to `ig-session.json`).
 
 ### Scraping Pipeline (per job)
 
@@ -175,7 +179,7 @@ sessions from different IPs/environments and blocks the account.
 If an account gets blocked:
 1. Change password manually
 2. Log in from a real browser, pass any challenge/verification
-3. Delete `ig-session.json` (or `docker exec scraper rm /app/data/ig-session.json`)
+3. Delete `ig-session.json`
 4. Restart scraper
 
 ## Scripts
@@ -185,7 +189,7 @@ If an account gets blocked:
 make dev              # Run bot + workers + scraper concurrently
 make dev-bot          # Telegram bot only
 make dev-workers      # Deliver + scheduler workers
-make dev-scraper      # Scraper worker (Docker)
+make dev-scraper      # Scraper worker
 
 # Build & Quality
 make build            # Build all packages
@@ -193,7 +197,7 @@ make lint             # Type-check all packages
 make test             # Run all tests
 
 # Docker
-make up               # Start infra (MongoDB, Redis, Bull Board, Scraper)
+make up               # Start infra (MongoDB, Redis, Bull Board, Playwright)
 make down             # Stop containers
 make redis-cli        # Open Redis CLI
 make bull-board       # Open Bull Board in browser

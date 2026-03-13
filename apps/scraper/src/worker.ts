@@ -1,5 +1,5 @@
 /**
- * Docker entry point for the Instagram scraper worker.
+ * Instagram scraper worker entry point.
  *
  * All jobs are scheduled: scrape → store posts → deliver only NEW posts
  * to all subscribers → update account lastPostId.

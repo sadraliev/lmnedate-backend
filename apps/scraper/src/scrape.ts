@@ -28,16 +28,11 @@ export const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
   if (launchPromise) return launchPromise;
 
-  launchPromise = chromium.launch({
-    headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--enable-unsafe-swiftshader',
-    ],
-  }).then((b) => {
+  const wsEndpoint = process.env.PLAYWRIGHT_WS ?? 'ws://localhost:3000';
+  launchPromise = chromium.connect(wsEndpoint).then((b) => {
     browser = b;
     b.on('disconnected', () => {
-      logger.info('Browser disconnected, will relaunch on next job');
+      logger.info('Browser disconnected, will reconnect on next job');
       browser = null;
     });
     launchPromise = null;

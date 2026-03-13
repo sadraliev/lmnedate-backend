@@ -24,52 +24,19 @@ services:
       timeout: 3s
       retries: 5
 
-  bot:
-    image: ${ECR_BOT_REPOSITORY_URL}:latest
-    container_name: fastify-app-bot
+  playwright:
+    build:
+      context: .
+      dockerfile: apps/scraper/Dockerfile
+    container_name: playwright
     restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    depends_on:
-      mongodb:
-        condition: service_healthy
-
-  workers:
-    image: ${ECR_WORKERS_REPOSITORY_URL}:latest
-    container_name: fastify-app-workers
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-
-  scraper:
-    image: ${ECR_SCRAPER_REPOSITORY_URL}:latest
-    container_name: fastify-app-scraper
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
-      SCRAPE_CONCURRENCY: "1"
-      SCRAPE_TIMEOUT_MS: "30000"
-      INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
-      INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD}
-    volumes:
-      - scraper_sessions:/app/data
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -80,6 +47,4 @@ volumes:
   mongo_data:
     driver: local
   redis_data:
-    driver: local
-  scraper_sessions:
     driver: local

@@ -28,30 +28,19 @@ services:
       timeout: 3s
       retries: 5
 
-  scraper:
+  playwright:
     build:
       context: .
-      dockerfile: apps/scraper/Dockerfile.dev
-    container_name: fastify-app-scraper
+      dockerfile: apps/scraper/Dockerfile
+    container_name: playwright
     restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/${MONGODB_DB:-fastify-app}
-      SCRAPE_CONCURRENCY: "1"
-      SCRAPE_TIMEOUT_MS: "30000"
-      INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
-      INSTAGRAM_PASSWORD: ${INSTAGRAM_PASSWORD:-}
-      IG_SESSION_PATH: /app/data/ig-session.json
-    volumes:
-      - ./apps/scraper/src:/app/apps/scraper/src
-      - ./packages/shared/src:/app/packages/shared/src
-      - scraper_sessions:/app/data
-    command: ["pnpm", "--filter", "@app/scraper", "dev"]
-    depends_on:
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -80,6 +69,4 @@ volumes:
   mongo_data:
     driver: local
   redis_data:
-    driver: local
-  scraper_sessions:
     driver: local
