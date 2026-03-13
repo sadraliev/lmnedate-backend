@@ -5,6 +5,7 @@
 import { readFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Browser } from 'playwright';
+import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
 import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'session' });
@@ -31,14 +32,16 @@ export const loginWithPlaywright = async (
   browser: Browser,
   username: string,
   password: string,
-  userAgent?: string,
 ): Promise<string> => {
   const context = await browser.newContext({
-    ...(userAgent ? { userAgent } : {}),
-    viewport: { width: 1280, height: 900 },
-    locale: 'en-US',
+    userAgent: FINGERPRINT.userAgent,
+    viewport: FINGERPRINT.viewport,
+    locale: FINGERPRINT.locale,
+    timezoneId: FINGERPRINT.timezoneId,
+    extraHTTPHeaders: EXTRA_HEADERS,
   });
   const page = await context.newPage();
+  await applyStealthScripts(page);
 
   try {
     await page.goto('https://www.instagram.com/accounts/login/', {

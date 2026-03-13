@@ -7,12 +7,10 @@ import type { APIRequestContext } from 'playwright';
 import type { ScrapedPost } from './types.js';
 import { extractPosts, extractPostsFromHtml, findNestedValue } from './parser.js';
 import { loadSession, loginWithPlaywright } from './session.js';
+import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
 import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'scraper' });
-
-const COMMON_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 let browser: Browser | null = null;
 
@@ -20,7 +18,10 @@ export const getBrowser = async (): Promise<Browser> => {
   if (browser && browser.isConnected()) return browser;
   browser = await chromium.launch({
     headless: true,
-    args: ['--disable-blink-features=AutomationControlled'],
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--enable-unsafe-swiftshader',
+    ],
   });
   browser.on('disconnected', () => {
     logger.info('Browser disconnected, will relaunch on next job');
@@ -71,7 +72,7 @@ export const initSession = async (
 
   logger.info({ igUsername }, 'No cached session — logging in');
   const b = await getBrowser();
-  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
+  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword);
 };
 
 export const refreshSession = async (
@@ -80,7 +81,7 @@ export const refreshSession = async (
 ): Promise<void> => {
   logger.info({ igUsername }, 'Refreshing session');
   const b = await getBrowser();
-  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword, COMMON_USER_AGENT);
+  cachedSessionPath = await loginWithPlaywright(b, igUsername, igPassword);
 };
 
 /**
@@ -250,9 +251,11 @@ export const scrapeProfile = async (
     const b = await getBrowser();
 
     const contextOptions: Record<string, unknown> = {
-      userAgent: COMMON_USER_AGENT,
-      viewport: { width: 1280, height: 900 },
-      locale: 'en-US',
+      userAgent: FINGERPRINT.userAgent,
+      viewport: FINGERPRINT.viewport,
+      locale: FINGERPRINT.locale,
+      timezoneId: FINGERPRINT.timezoneId,
+      extraHTTPHeaders: EXTRA_HEADERS,
     };
 
     if (cachedSessionPath) {
@@ -262,6 +265,7 @@ export const scrapeProfile = async (
     context = await b.newContext(contextOptions);
 
     const page = await context.newPage();
+    await applyStealthScripts(page);
     const posts: ScrapedPost[] = [];
 
     page.on('response', async (response) => {
