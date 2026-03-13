@@ -175,7 +175,7 @@ const main = async () => {
   // Clean stale schedulers, then register fresh one
   const existingSchedulers = await pollQueue.getJobSchedulers();
   for (const s of existingSchedulers) {
-    if (s.id !== 'instagram-poll-scheduler') {
+    if (s.id && s.id !== 'instagram-poll-scheduler') {
       await pollQueue.removeJobScheduler(s.id);
     }
   }
