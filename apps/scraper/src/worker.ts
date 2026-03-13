@@ -10,7 +10,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
-import { Worker, Queue } from 'bullmq';
+import { Worker, Queue, DelayedError } from 'bullmq';
 import type { Job } from 'bullmq';
 import {
   QUEUE_NAMES,
@@ -28,6 +28,7 @@ import {
 } from '@app/shared';
 import type { ScrapeJobData, DeliverJobData } from '@app/shared';
 import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.js';
+import { initThrottle, closeThrottle, recordOutcome, getPauseRemaining } from './throttle.js';
 
 const logger = createLogger({ name: 'scraper' });
 
@@ -52,6 +53,8 @@ const main = async () => {
   await ensurePostIndexes();
   logger.info('Connected to MongoDB');
 
+  initThrottle(REDIS_URL);
+
   const bullmqConnection = createRedisConnection(REDIS_URL, 'scraper-bullmq', logger);
 
   const deliverQueue = new Queue<DeliverJobData>(QUEUE_NAMES.INSTAGRAM_DELIVER, {
@@ -65,6 +68,14 @@ const main = async () => {
       const jobLog = logger.child({ jobId: job.id, username });
       jobLog.info('Processing scrape job');
 
+      // Adaptive throttle — honour emergency pause
+      const pauseMs = await getPauseRemaining();
+      if (pauseMs > 0) {
+        jobLog.info({ pauseMs }, 'Emergency pause active — delaying job');
+        await job.moveToDelayed(Date.now() + pauseMs, job.token!);
+        throw new DelayedError('Emergency pause active');
+      }
+
       try {
         const rawPosts = await withTimeout(
           scrapeProfile(username, SCRAPE_TIMEOUT_MS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD),
@@ -73,9 +84,12 @@ const main = async () => {
         );
 
         if (rawPosts.length === 0) {
+          await recordOutcome('empty');
           jobLog.info('No posts found');
           return;
         }
+
+        await recordOutcome('success');
 
         // Store posts (duplicates are skipped via unique index)
         const storedPosts = await storeNewPosts(rawPosts);
@@ -137,6 +151,15 @@ const main = async () => {
         jobLog.info({ delivered: newPosts.length, to: subscribers.length }, 'Scrape complete');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const lower = message.toLowerCase();
+
+        if (lower.includes('429') || lower.includes('rate limit')) {
+          await recordOutcome('rate_limited');
+        } else if (lower.includes('challenge') || lower.includes('checkpoint') || lower.includes('suspended')) {
+          await recordOutcome('banned');
+        }
+        // Other errors → transient, don't affect throttle
+
         jobLog.error({ err: message }, 'Failed to scrape');
         throw error;
       }
@@ -162,6 +185,7 @@ const main = async () => {
     logger.info({ signal }, 'Shutting down');
     await worker.close();
     await deliverQueue.close();
+    await closeThrottle();
     await closeBrowser();
     await closeDatabaseConnection();
     process.exit(0);

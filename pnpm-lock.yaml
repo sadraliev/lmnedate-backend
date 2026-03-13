@@ -66,6 +66,9 @@ importers:
       dotenv:
         specifier: ^17.2.3
         version: 17.3.1
+      ioredis:
+        specifier: ^5.9.2
+        version: 5.10.0
       playwright:
         specifier: ^1.58.2
         version: 1.58.2

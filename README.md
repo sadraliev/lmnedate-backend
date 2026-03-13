@@ -56,6 +56,7 @@ apps/scraper/                 # @app/scraper — Playwright scraper (runs in Doc
 ├── src/
 │   ├── worker.ts             # BullMQ consumer, job processing
 │   ├── scrape.ts             # Browser lifecycle, profile scraping, enrichment
+│   ├── throttle.ts           # Adaptive throttling based on success rate
 │   ├── session.ts            # Instagram login + file-based session persistence
 │   ├── parser.ts             # Post extraction (re-exports from shared)
 │   └── types.ts              # ScrapedPost type
@@ -74,7 +75,8 @@ Bot process                Workers process              Scraper (Docker + Playwr
 │  Grammy bot    │         │  Deliver worker      │     │  BullMQ worker       │
 │  (long-polling)│         │  Scheduler (15 min)  │◄──► │  Playwright browser  │
 └────────────────┘         └──────────────────────┘     │  File-based session  │
-         │                          │  Redis             └──────────────────────┘
+         │                          │  Redis             │  Adaptive throttle   │
+         │                          │                    └──────────────────────┘
          │                          │                             │
          └──────────── MongoDB ◄────┴─────────────────────────────┘
 ```
@@ -126,6 +128,34 @@ In Docker, session file is persisted via named volume (`scraper_sessions:/app/da
 > **Intercept vs Enrich**: interception captures what Instagram sends on page load
 > (post structure). Enrichment actively requests the API for engagement metrics that
 > aren't included in the page load responses.
+
+### Adaptive Throttling
+
+The scraper adjusts its pacing based on recent success/failure rates using a
+Redis-backed sliding window (`throttle.ts`).
+
+**How it works:**
+- Last 20 outcomes are tracked in Redis (`scraper:outcomes`)
+- After each job, the outcome is classified: `success`, `empty`, `rate_limited`, or `banned`
+- The scrape interval is recalculated based on the success rate:
+
+| Success rate | Action |
+|-------------|--------|
+| > 90% | Decrease interval by 10% (min 30s) |
+| 70–90% | Keep current |
+| 50–70% | Increase by 50% |
+| 30–50% | Double |
+| < 30% | Double + emergency pause (15–30 min) |
+
+**Emergency pause:** When the failure rate is critically high (< 30% success), all
+incoming jobs are deferred using BullMQ's `DelayedError` — they move back to the
+delayed state without consuming retry attempts. The pause duration is randomized
+between 15–30 minutes to avoid thundering herd on resume.
+
+**Redis keys** (no TTL — learned state must survive restarts):
+- `scraper:outcomes` — sliding window list (capped at 20)
+- `scraper:interval_ms` — current dynamic interval
+- `scraper:paused_until` — epoch ms timestamp during emergency pause
 
 ### Login Wall Detection
 
