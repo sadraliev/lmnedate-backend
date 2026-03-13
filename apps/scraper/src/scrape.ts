@@ -8,6 +8,7 @@ import type { ScrapedPost } from './types.js';
 import { extractPosts, extractPostsFromHtml, findNestedValue } from './parser.js';
 import { loadSession, loginWithPlaywright } from './session.js';
 import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
+import { humanScroll } from './humanizer.js';
 import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'scraper' });
@@ -330,8 +331,7 @@ export const scrapeProfile = async (
 
     // Scroll down to trigger lazy loading
     if (posts.length === 0) {
-      await page.evaluate(() => window.scrollBy(0, 800));
-      await page.waitForTimeout(3_000);
+      await humanScroll(page);
       await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
     }
 

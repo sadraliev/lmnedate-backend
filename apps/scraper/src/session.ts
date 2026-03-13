@@ -6,6 +6,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Browser } from 'playwright';
 import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
+import { humanDelay, humanType } from './humanizer.js';
 import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'session' });
@@ -53,19 +54,20 @@ export const loginWithPlaywright = async (
     const cookieButton = page.locator('button:has-text("Allow all cookies"), button:has-text("Allow essential and optional cookies"), button:has-text("Accept")');
     if (await cookieButton.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
       await cookieButton.first().click();
-      await page.waitForTimeout(2_000);
+      await humanDelay(1500, 3000);
     }
 
     const usernameInput = page.locator('input[name="username"], input[name="email"]').first();
     await usernameInput.waitFor({ timeout: 15_000 });
-    await usernameInput.fill(username);
+    await humanType(usernameInput, username);
 
     const passwordInput = page.locator('input[name="password"], input[name="pass"], input[type="password"]').first();
-    await passwordInput.fill(password);
+    await humanType(passwordInput, password);
 
     const submitButton = page.getByRole('button', { name: 'Log In', exact: true });
     await submitButton.waitFor({ state: 'visible', timeout: 10_000 });
     await submitButton.click();
+    await humanDelay(2000, 4000);
 
     await page.waitForURL((url) => !url.pathname.includes('/accounts/login'), {
       timeout: 30_000,
@@ -76,6 +78,7 @@ export const loginWithPlaywright = async (
       const btn = page.locator(`button:has-text("${label}")`);
       if (await btn.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await btn.click();
+        await humanDelay(1000, 2000);
       }
     }
 
