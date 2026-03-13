@@ -19,6 +19,7 @@ export const FINGERPRINT = {
 } as const;
 
 export const EXTRA_HEADERS = {
+  'Accept-Language': `${systemLocale},${systemLocale.split('-')[0]};q=0.9`,
   'Sec-Ch-Ua': FINGERPRINT.secChUa,
   'Sec-Ch-Ua-Mobile': FINGERPRINT.secChUaMobile,
   'Sec-Ch-Ua-Platform': FINGERPRINT.secChUaPlatform,

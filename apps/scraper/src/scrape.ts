@@ -13,6 +13,13 @@ import { createLogger } from '@app/shared';
 
 const logger = createLogger({ name: 'scraper' });
 
+const API_HEADERS = {
+  'X-IG-App-ID': '936619743392459',
+  'X-Requested-With': 'XMLHttpRequest',
+  'Accept': '*/*',
+  'Accept-Language': EXTRA_HEADERS['Accept-Language'],
+} as const;
+
 let browser: Browser | null = null;
 let launchPromise: Promise<Browser> | null = null;
 
@@ -122,7 +129,7 @@ const enrichPostsWithApi = async (
     // Step 1: resolve username → user_id
     const profileRes = await request.get(
       `https://i.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      { headers: { 'X-IG-App-ID': '936619743392459' } },
+      { headers: API_HEADERS },
     );
 
     if (!profileRes.ok()) {
@@ -141,7 +148,7 @@ const enrichPostsWithApi = async (
     // Step 2: fetch feed
     const feedRes = await request.get(
       `https://i.instagram.com/api/v1/feed/user/${userId}/?count=12`,
-      { headers: { 'X-IG-App-ID': '936619743392459' } },
+      { headers: API_HEADERS },
     );
 
     if (!feedRes.ok()) {
