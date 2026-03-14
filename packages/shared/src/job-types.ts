@@ -1,13 +1,12 @@
 export interface ScrapeJobData {
   username: string;
-  enqueuedAt: string;
 }
 
 import type { CarouselMediaItem } from './post-types.js';
 
 export interface DeliverJobData {
   chatId: number;
-  enqueuedAt?: string;
+  scrapedInMs?: number;
   post?: {
     instagramUsername: string;
     caption?: string;

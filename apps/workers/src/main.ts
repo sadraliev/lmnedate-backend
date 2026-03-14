@@ -66,7 +66,7 @@ const main = async () => {
   const deliverWorker = new Worker<DeliverJobData>(
     QUEUE_NAMES.INSTAGRAM_DELIVER,
     async (job: Job<DeliverJobData>) => {
-      const { chatId, enqueuedAt, post, error } = job.data;
+      const { chatId, scrapedInMs, post, error } = job.data;
       const jobLog = logger.child({ jobId: job.id, chatId });
 
       // Handle error/notification messages
@@ -84,9 +84,8 @@ const main = async () => {
       jobLog.info({ username: post.instagramUsername }, 'Delivering post');
 
       let processingTime = '';
-      if (enqueuedAt) {
-        const ms = Date.now() - new Date(enqueuedAt).getTime();
-        const secs = Math.round(ms / 1000);
+      if (scrapedInMs != null) {
+        const secs = Math.round(scrapedInMs / 1000);
         processingTime = secs >= 60
           ? `\n\n⏱ ${Math.floor(secs / 60)}m ${secs % 60}s`
           : `\n\n⏱ ${secs}s`;
@@ -208,13 +207,13 @@ const main = async () => {
         }
 
         await scrapeQueue.add(
-          `scrape-${username}-${Date.now()}`,
+          `scrape-${username}`,
           {
             username,
-            enqueuedAt: new Date().toISOString(),
           } satisfies ScrapeJobData,
           {
-            removeOnComplete: { count: 50 },
+            jobId: `scrape-${username}`,
+            removeOnComplete: true,
             removeOnFail: { count: 100 },
             attempts: 3,
             backoff: { type: 'exponential', delay: 30_000 },

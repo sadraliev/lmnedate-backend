@@ -77,11 +77,13 @@ const main = async () => {
       }
 
       try {
+        const scrapeStart = Date.now();
         const rawPosts = await withTimeout(
           scrapeProfile(username, SCRAPE_TIMEOUT_MS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD),
           SCRAPE_TIMEOUT_MS + 10_000,
           `scrape @${username}`,
         );
+        const scrapedInMs = Date.now() - scrapeStart;
 
         if (rawPosts.length === 0) {
           await recordOutcome('empty');
@@ -113,42 +115,46 @@ const main = async () => {
           return;
         }
 
-        // Deliver new posts to ALL subscribers
-        const subscribers = await getSubscribersByAccount(username);
-        jobLog.info({ subscribers: subscribers.length, newPosts: newPosts.length }, 'Delivering');
-
-        for (const sub of subscribers) {
-          for (const post of newPosts) {
-            await deliverQueue.add(
-              `deliver-${username}-${sub.chatId}-${Date.now()}`,
-              {
-                chatId: sub.chatId,
-                enqueuedAt: job.data.enqueuedAt,
-                post: {
-                  instagramUsername: post.instagramUsername,
-                  caption: post.caption,
-                  mediaUrl: post.mediaUrl,
-                  mediaType: post.mediaType,
-                  permalink: post.permalink,
-                  videoUrl: post.videoUrl,
-                  carouselMedia: post.carouselMedia,
-                },
-              },
-              {
-                removeOnComplete: { count: 50 },
-                removeOnFail: { count: 100 },
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 30_000 },
-              },
-            );
-          }
+        // Deliver only the latest post to avoid flooding after downtime
+        const latestPost = newPosts[newPosts.length - 1];
+        if (newPosts.length > 1) {
+          jobLog.info({ skipped: newPosts.length - 1 }, 'Skipping older posts to avoid flooding');
         }
 
-        // Advance the account cursor to the newest post
-        const newestPost = newPosts[newPosts.length - 1];
-        await updateAccountLastPostId(username, newestPost.postId);
+        const subscribers = await getSubscribersByAccount(username);
+        jobLog.info({ subscribers: subscribers.length, newPosts: newPosts.length, delivering: 1 }, 'Delivering');
+
+        for (const sub of subscribers) {
+          const jobId = `deliver-${username}-${latestPost.postId}-${sub.chatId}`;
+          await deliverQueue.add(
+            jobId,
+            {
+              chatId: sub.chatId,
+              scrapedInMs,
+              post: {
+                instagramUsername: latestPost.instagramUsername,
+                caption: latestPost.caption,
+                mediaUrl: latestPost.mediaUrl,
+                mediaType: latestPost.mediaType,
+                permalink: latestPost.permalink,
+                videoUrl: latestPost.videoUrl,
+                carouselMedia: latestPost.carouselMedia,
+              },
+            },
+            {
+              jobId,
+              removeOnComplete: { count: 100 },
+              removeOnFail: { count: 100 },
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 30_000 },
+            },
+          );
+        }
+
+        // Advance the account cursor to the newest post (skips all older ones)
+        await updateAccountLastPostId(username, latestPost.postId);
         await updateLastScraped(username);
-        jobLog.info({ delivered: newPosts.length, to: subscribers.length }, 'Scrape complete');
+        jobLog.info({ delivered: 1, skipped: newPosts.length - 1, to: subscribers.length, scrapedInMs }, 'Scrape complete');
       } catch (error) {
         // Structured ban detection (from ban-detection.ts)
         if (error instanceof BanDetectedError) {
