@@ -1,16 +1,18 @@
 {
   "name": "instagram-scraper",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev:bot": "pnpm --filter @app/bot dev",
     "dev:workers": "pnpm --filter @app/workers dev",
     "dev:scraper": "pnpm --filter @app/scraper dev",
-    "build": "pnpm -r build",
+    "build": "node scripts/build.js",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test"
   },
   "devDependencies": {
     "@types/node": "^25.0.9",
+    "esbuild": "^0.25.0",
     "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.17",
     "concurrently": "^9.2.1",

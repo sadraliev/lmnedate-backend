@@ -75,8 +75,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all packages
-        run: pnpm -r build
+      - name: Build (esbuild bundles)
+        run: node scripts/build.mjs
 
       - name: Deploy to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -85,11 +85,10 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           source: >-
-            apps/bot/dist/,apps/bot/package.json,
-            apps/workers/dist/,apps/workers/package.json,
-            apps/scraper/dist/,apps/scraper/package.json,
-            packages/shared/dist/,packages/shared/package.json,
-            package.json,pnpm-lock.yaml,pnpm-workspace.yaml,
+            apps/bot/dist/bot.js,apps/bot/dist/bot.js.map,
+            apps/workers/dist/main.js,apps/workers/dist/main.js.map,
+            apps/scraper/dist/worker.js,apps/scraper/dist/worker.js.map,
+            deploy-package.json,
             ecosystem.config.cjs,docker-compose.prod.yml
           target: ~/app
 
@@ -101,7 +100,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
             cd ~/app
-            pnpm install --frozen-lockfile --prod
+            cp deploy-package.json package.json
+            npm install --prod
 
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.prod.yml pull playwright

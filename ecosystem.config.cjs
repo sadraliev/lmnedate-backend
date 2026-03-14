@@ -13,24 +13,21 @@ module.exports = {
   apps: [
     {
       name: 'bot',
-      cwd: './apps/bot',
-      script: 'dist/bot.js',
+      script: './apps/bot/dist/bot.js',
       env: {
         NODE_ENV: 'production',
       },
     },
     {
       name: 'workers',
-      cwd: './apps/workers',
-      script: 'dist/main.js',
+      script: './apps/workers/dist/main.js',
       env: {
         NODE_ENV: 'production',
       },
     },
     {
       name: 'scraper',
-      cwd: './apps/scraper',
-      script: 'dist/worker.js',
+      script: './apps/scraper/dist/worker.js',
       env: {
         NODE_ENV: 'production',
         PLAYWRIGHT_WS: 'ws://localhost:3000/ws',

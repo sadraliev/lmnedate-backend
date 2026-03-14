@@ -45,3 +45,4 @@ data/
 # Deployment artifacts
 deploy.tar.gz
 *.tar.gz
+deploy-package.json
