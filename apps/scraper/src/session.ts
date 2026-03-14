@@ -96,22 +96,17 @@ export const loginWithPlaywright = async (
     await submitButton.click();
     await humanDelay(2000, 4000);
 
-    // Check for login error before waiting for navigation
-    const errorBanner = page.locator('#slfErrorAlert, [data-testid="login-error-message"], [role="alert"]');
-    if (await errorBanner.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      const errorText = await errorBanner.textContent().catch(() => 'Unknown login error');
-      await notifyAdmin(page, `Login failed for @${username}: ${errorText}`);
-      logger.fatal({ username, errorText }, 'Login rejected by Instagram — stopping process');
+    // Wait for navigation away from login page — if it doesn't happen, something is wrong
+    const loggedIn = await page.waitForURL(
+      (url) => !url.pathname.includes('/accounts/login'),
+      { timeout: 30_000 },
+    ).then(() => true).catch(() => false);
+
+    if (!loggedIn) {
+      await notifyAdmin(page, `Login failed for @${username} — stuck at ${page.url()}`);
+      logger.fatal({ username, url: page.url() }, 'Login failed — stopping process');
       process.exit(1);
     }
-
-    await page.waitForURL((url) => !url.pathname.includes('/accounts/login'), {
-      timeout: 30_000,
-    }).catch(async (err) => {
-      await notifyAdmin(page, `Login timeout for @${username} — page stuck at ${page.url()}`);
-      logger.error({ url: page.url() }, 'Login stuck — screenshot sent to admin');
-      process.exit(1);
-    });
 
     // Dismiss "Save login info" or "Turn on notifications" dialogs
     for (const label of ['Not Now', 'Not now']) {
