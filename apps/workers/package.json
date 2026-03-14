@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --conditions @app/source --watch src/main.ts",
-    "start": "node --import tsx src/main.ts",
+    "start": "node dist/main.js",
     "lint": "tsc --noEmit",
     "build": "tsc"
   },
