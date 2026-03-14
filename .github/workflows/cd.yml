@@ -76,7 +76,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build (esbuild bundles)
-        run: node scripts/build.mjs
+        run: node scripts/build.js
 
       - name: Deploy to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -100,12 +100,27 @@ jobs:
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
             cd ~/app
+            mkdir -p ~/.scraper
+
+            cat > .env << 'ENVEOF'
+            MONGODB_URI=mongodb://localhost:27019/fastify-app
+            MONGODB_DB=fastify-app
+            REDIS_URL=redis://localhost:6381
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            INSTAGRAM_USERNAME=${{ secrets.INSTAGRAM_USERNAME }}
+            INSTAGRAM_PASSWORD=${{ secrets.INSTAGRAM_PASSWORD }}
+            SCRAPE_CONCURRENCY=1
+            SCRAPE_TIMEOUT_MS=30000
+            IG_SESSION_PATH=~/.scraper/ig-session.json
+            PLAYWRIGHT_WS=ws://localhost:3000/ws
+            ENVEOF
+
             cp deploy-package.json package.json
             npm install --prod
 
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.prod.yml pull playwright
-            docker compose -f docker-compose.prod.yml up -d playwright
+            docker compose -f docker-compose.prod.yml up -d
 
             pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
             pm2 save
@@ -113,5 +128,5 @@ jobs:
             # healthcheck
             sleep 3
             pm2 ls
-            docker ps --filter name=playwright
+            docker ps
             docker image prune -af
