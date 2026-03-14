@@ -44,9 +44,6 @@ importers:
       '@app/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.3.1
       grammy:
         specifier: ^1.41.1
         version: 1.41.1
@@ -66,9 +63,6 @@ importers:
       bullmq:
         specifier: ^5.66.5
         version: 5.70.4
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.3.1
       ioredis:
         specifier: ^5.9.2
         version: 5.10.0
@@ -91,9 +85,6 @@ importers:
       bullmq:
         specifier: ^5.66.5
         version: 5.70.4
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.3.1
       grammy:
         specifier: ^1.41.1
         version: 1.41.1
@@ -110,6 +101,9 @@ importers:
 
   packages/shared:
     dependencies:
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.3.1
       mongodb:
         specifier: ^6.21.0
         version: 6.21.0

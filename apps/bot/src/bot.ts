@@ -5,12 +5,9 @@
  * /update <username> → subscribe to an Instagram account
  */
 
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '.env' });
-
 import { Bot } from 'grammy';
 import {
+  loadEnv,
   createLogger,
   connectToDatabase,
   closeDatabaseConnection,
@@ -20,6 +17,8 @@ import {
   addSubscription,
   findOrCreateAccount,
 } from '@app/shared';
+
+loadEnv();
 
 const logger = createLogger({ name: 'bot' });
 
@@ -40,9 +39,9 @@ bot.command('start', async (ctx) => {
   logger.info({ chatId: ctx.chat.id }, '/start command received');
   await ctx.reply(
     'Instagram Scraper Bot\n\n' +
-    'Send /update <username> to follow a public Instagram account.\n' +
-    'New posts will be delivered automatically.\n\n' +
-    'Example: /update bbcnews',
+      'Send /update <username> to follow a public Instagram account.\n' +
+      'New posts will be delivered automatically.\n\n' +
+      'Example: /update nytimes'
   );
 });
 
@@ -63,19 +62,12 @@ bot.command('update', async (ctx) => {
 
   try {
     // Create subscriber (telegram_users doc)
-    await addSubscription(
-      chatId,
-      username,
-      ctx.from?.username,
-      ctx.from?.first_name,
-    );
+    await addSubscription(chatId, username, ctx.from?.username, ctx.from?.first_name);
 
     // Ensure the Instagram account exists for the scheduler
     await findOrCreateAccount(username, chatId);
 
-    await ctx.reply(
-      `Subscribed to @${username}. New posts will be delivered automatically.`,
-    );
+    await ctx.reply(`Subscribed to @${username}. New posts will be delivered automatically.`);
     logger.info({ chatId, username }, 'Subscription added');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -88,19 +80,20 @@ bot.command('stats', async (ctx) => {
   try {
     const db = getDatabase();
     const [totalUsers, totalSubscriptions, totalPosts] = await Promise.all([
-      db.collection('telegram_users').aggregate([
-        { $group: { _id: '$chatId' } },
-        { $count: 'count' },
-      ]).toArray().then((r) => r[0]?.count ?? 0),
+      db
+        .collection('telegram_users')
+        .aggregate([{ $group: { _id: '$chatId' } }, { $count: 'count' }])
+        .toArray()
+        .then((r) => r[0]?.count ?? 0),
       db.collection('telegram_users').countDocuments(),
       db.collection('instagram_posts').countDocuments(),
     ]);
 
     await ctx.reply(
       `Stats\n\n` +
-      `Users: ${totalUsers}\n` +
-      `Subscriptions: ${totalSubscriptions}\n` +
-      `Posts: ${totalPosts}`,
+        `Users: ${totalUsers}\n` +
+        `Subscriptions: ${totalSubscriptions}\n` +
+        `Posts: ${totalPosts}`
     );
   } catch (error) {
     logger.error({ err: error }, 'Failed to get stats');

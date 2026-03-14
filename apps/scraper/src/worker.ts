@@ -5,12 +5,10 @@
  * to all subscribers → update account lastPostId.
  */
 
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '.env' });
 import { Worker, Queue } from 'bullmq';
 import type { Job } from 'bullmq';
 import {
+  loadEnv,
   QUEUE_NAMES,
   createRedisConnection,
   createLogger,
@@ -28,6 +26,8 @@ import type { ScrapeJobData, DeliverJobData } from '@app/shared';
 import { scrapeProfile, initSession, closeBrowser, withTimeout } from './scrape.js';
 import { initThrottle, closeThrottle, recordOutcome, getPauseRemaining, triggerEmergencyPause } from './throttle.js';
 import { BanDetectedError } from './ban-detection.js';
+
+loadEnv();
 
 const logger = createLogger({ name: 'scraper' });
 

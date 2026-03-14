@@ -6,14 +6,11 @@
  * 2. Scheduler — upsertJobScheduler (15 min) + poll worker that enqueues scrape jobs.
  */
 
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '.env' });
-
 import { Queue, Worker } from 'bullmq';
 import type { Job } from 'bullmq';
 import { Bot } from 'grammy';
 import {
+  loadEnv,
   QUEUE_NAMES,
   createRedisConnection,
   createLogger,
@@ -26,6 +23,8 @@ import {
 } from '@app/shared';
 import type { ScrapeJobData, DeliverJobData, CarouselMediaItem } from '@app/shared';
 import type { InputMediaPhoto, InputMediaVideo } from 'grammy/types';
+
+loadEnv();
 
 const logger = createLogger({ name: 'workers' });
 
