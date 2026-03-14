@@ -3,13 +3,17 @@
 ## Architecture: browser, contexts, jobs
 
 ```
-Chromium (single process — singleton)
-├── Context 1 (job: @user_a)  ← isolated cookies & session
-├── Context 2 (job: @user_b)  ← isolated cookies & session
-└── Context 3 (job: @user_c)  ← isolated cookies & session
+Playwright Docker container (server.js)
+  └── Chromium (single process)
+        ↑ WebSocket (PLAYWRIGHT_WS)
+Scraper worker (apps/scraper)
+  └── chromium.connect(wsEndpoint)
+        ├── Context 1 (job: @user_a)  ← isolated cookies & session
+        ├── Context 2 (job: @user_b)  ← isolated cookies & session
+        └── Context 3 (job: @user_c)  ← isolated cookies & session
 ```
 
-- **Browser** — one per worker process (`getBrowser()` returns a singleton).
+- **Browser** — Chromium runs in a separate Docker container (`apps/scraper/server.js`). The scraper worker connects via WebSocket (`PLAYWRIGHT_WS`). `getBrowser()` returns a singleton connection.
 - **Context** — created per job, like an incognito tab. Closed in `finally` after the job finishes.
 - **Jobs** — BullMQ jobs, concurrency controlled via `SCRAPE_CONCURRENCY`.
 
@@ -19,7 +23,7 @@ Chromium (single process — singleton)
 
 **When**: `SCRAPE_CONCURRENCY > 1` and the browser isn't running yet (first start or after a crash).
 
-**What happens without protection**: two jobs call `getBrowser()` simultaneously, both see `browser === null`, both call `chromium.launch()`. Two Chromium processes start, but only the last one gets stored in the `browser` variable. The first one leaks — it stays in memory as a zombie.
+**What happens without protection**: two jobs call `getBrowser()` simultaneously, both see `browser === null`, both call `chromium.connect()`. Two connections open, but only the last one gets stored in the `browser` variable. The first one leaks.
 
 **Fix**: promise-based mutex. The first call stores the launch promise in `launchPromise`. All subsequent calls see the launch is already in progress and await the same promise.
 
@@ -46,13 +50,13 @@ export const getBrowser = async () => {
 
 **Fix**: same mutex pattern — `refreshPromise`. The second call awaits the result of the first login.
 
-## Zombie Chromium processes
+## Disconnected browser handle
 
 **When**: the worker process crashes without SIGTERM — uncaught exception, OOM, unhandled rejection.
 
-**What happens**: `SIGTERM`/`SIGINT` handlers don't fire, `closeBrowser()` is never called, the Chromium process keeps running.
+**What happens**: `SIGTERM`/`SIGINT` handlers don't fire, `closeBrowser()` is never called, the WebSocket connection leaks. Chromium itself keeps running in Docker.
 
-**Fix**: additional handlers for `uncaughtException` and `unhandledRejection` that close the browser before calling `process.exit(1)`.
+**Fix**: additional handlers for `uncaughtException` and `unhandledRejection` that close the browser connection before calling `process.exit(1)`.
 
 ```ts
 process.on('uncaughtException', async (err) => {
