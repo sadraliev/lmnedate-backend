@@ -33,7 +33,7 @@ module.exports = {
       script: 'dist/worker.js',
       env: {
         NODE_ENV: 'production',
-        PLAYWRIGHT_WS: 'ws://localhost:3000',
+        PLAYWRIGHT_WS: 'ws://localhost:3000/ws',
         IG_SESSION_PATH: join(homedir(), '.scraper', 'ig-session.json'),
       },
     },

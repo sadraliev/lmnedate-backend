@@ -11,6 +11,7 @@ const HOST = process.env.HOST || '0.0.0.0';
     headless: true,
     host: HOST,
     port: PORT,
+    wsPath: '/ws',
     args: [
       '--disable-blink-features=AutomationControlled',
       '--enable-unsafe-swiftshader',
