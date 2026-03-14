@@ -71,6 +71,11 @@ export const loginWithPlaywright = async (
 
     await page.waitForURL((url) => !url.pathname.includes('/accounts/login'), {
       timeout: 30_000,
+    }).catch(async (err) => {
+      const screenshotPath = '/home/ubuntu/app/login-debug.png';
+      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+      logger.error({ url: page.url(), screenshotPath }, 'Login stuck — screenshot saved');
+      throw err;
     });
 
     // Dismiss "Save login info" or "Turn on notifications" dialogs
