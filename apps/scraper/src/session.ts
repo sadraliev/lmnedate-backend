@@ -29,7 +29,7 @@ const notifyAdmin = async (page: Page, message: string): Promise<void> => {
     const form = new FormData();
     form.append('chat_id', ADMIN_CHAT_ID);
     form.append('caption', message);
-    form.append('photo', new Blob([screenshot], { type: 'image/png' }), 'login-debug.png');
+    form.append('photo', new Blob([new Uint8Array(screenshot)], { type: 'image/png' }), 'login-debug.png');
 
     await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
       method: 'POST',
