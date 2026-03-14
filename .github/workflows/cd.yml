@@ -11,119 +11,107 @@ concurrency:
   group: cd-main
   cancel-in-progress: false
 
-permissions:
-  id-token: write
-  contents: read
-
-env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-
 jobs:
-  publish:
+  playwright:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: bot
-            dockerfile: apps/bot/Dockerfile
-            ecr_url_secret: ECR_BOT_REPOSITORY_URL
-          - image: workers
-            dockerfile: apps/workers/Dockerfile
-            ecr_url_secret: ECR_WORKERS_REPOSITORY_URL
-          - image: scraper
-            dockerfile: apps/scraper/Dockerfile
-            ecr_url_secret: ECR_SCRAPER_REPOSITORY_URL
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Check for Playwright changes
+        id: filter
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^apps/scraper/(Dockerfile|server\.js)$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.filter.outputs.changed == 'true'
+        uses: docker/login-action@v3
         with:
-          role-to-assume: ${{ secrets.IAC_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: ecr
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/setup-buildx-action@v3
+        if: steps.filter.outputs.changed == 'true'
 
-      - uses: docker/build-push-action@v6
+      - name: Build and push Playwright image
+        if: steps.filter.outputs.changed == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: apps/scraper/Dockerfile
           push: true
           tags: |
-            ${{ secrets[matrix.ecr_url_secret] }}:latest
-            ${{ secrets[matrix.ecr_url_secret] }}:${{ github.event.workflow_run.head_sha || github.sha }}
+            ghcr.io/${{ github.repository }}/playwright:latest
+            ghcr.io/${{ github.repository }}/playwright:${{ github.event.workflow_run.head_sha || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
-    needs: publish
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    needs: playwright
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/setup-node@v4
         with:
-          role-to-assume: ${{ secrets.IAC_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          node-version: 24
 
-      - name: Get ECR login password
-        id: ecr
-        run: |
-          echo "password=$(aws ecr get-login-password --region ${{ vars.AWS_REGION }})" >> "$GITHUB_OUTPUT"
-          echo "registry=$(echo ${{ secrets.ECR_BOT_REPOSITORY_URL }} | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
 
-      - name: Copy compose file to EC2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm -r build
+
+      - name: Deploy to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          source: docker-compose.prod.yml
+          source: >-
+            apps/bot/dist/,apps/bot/package.json,
+            apps/workers/dist/,apps/workers/package.json,
+            apps/scraper/dist/,apps/scraper/package.json,
+            packages/shared/dist/,packages/shared/package.json,
+            package.json,pnpm-lock.yaml,pnpm-workspace.yaml,
+            ecosystem.config.cjs,docker-compose.prod.yml
           target: ~/app
 
-      - name: Deploy via SSH
+      - name: Start services on EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: TELEGRAM_BOT_TOKEN,INSTAGRAM_USERNAME,INSTAGRAM_PASSWORD,ECR_BOT_REPOSITORY_URL,ECR_WORKERS_REPOSITORY_URL,ECR_SCRAPER_REPOSITORY_URL,ECR_PASSWORD,ECR_REGISTRY
           script: |
             cd ~/app
-            cat > .env <<EOF
-            TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
-            INSTAGRAM_USERNAME=$INSTAGRAM_USERNAME
-            INSTAGRAM_PASSWORD=$INSTAGRAM_PASSWORD
-            ECR_BOT_REPOSITORY_URL=$ECR_BOT_REPOSITORY_URL
-            ECR_WORKERS_REPOSITORY_URL=$ECR_WORKERS_REPOSITORY_URL
-            ECR_SCRAPER_REPOSITORY_URL=$ECR_SCRAPER_REPOSITORY_URL
-            EOF
-            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin $ECR_REGISTRY
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            pnpm install --frozen-lockfile --prod
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose -f docker-compose.prod.yml pull playwright
+            docker compose -f docker-compose.prod.yml up -d playwright
+
+            pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+            pm2 save
+
+            # healthcheck
+            sleep 3
+            pm2 ls
+            docker ps --filter name=playwright
             docker image prune -af
-            # Verify containers are running
-            sleep 5
-            FAILED=$(docker ps --filter "status=restarting" --format "{{.Names}}" 2>/dev/null)
-            if [ -n "$FAILED" ]; then
-              echo "DEPLOY FAILED — containers restarting: $FAILED"
-              docker logs $(echo "$FAILED" | head -1) --tail 20
-              exit 1
-            fi
-            echo "Deploy OK — all containers running"
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
-          INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
-          ECR_BOT_REPOSITORY_URL: ${{ secrets.ECR_BOT_REPOSITORY_URL }}
-          ECR_WORKERS_REPOSITORY_URL: ${{ secrets.ECR_WORKERS_REPOSITORY_URL }}
-          ECR_SCRAPER_REPOSITORY_URL: ${{ secrets.ECR_SCRAPER_REPOSITORY_URL }}
-          ECR_PASSWORD: ${{ steps.ecr.outputs.password }}
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
