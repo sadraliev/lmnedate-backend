@@ -6,7 +6,7 @@
 packages/shared/    → @app/shared    (queue names, job types, redis config, DB repos)
 apps/bot/           → @app/bot       (Grammy Telegram bot, long-polling)
 apps/workers/       → @app/workers   (BullMQ deliver + scheduler, single process)
-apps/scraper/       → @app/scraper   (Playwright + BullMQ scraper worker, runs in Docker)
+apps/scraper/       → @app/scraper   (Playwright + BullMQ scraper worker)
 tooling/tsconfig/   → @app/tsconfig  (shared TypeScript config)
 ```
 
@@ -15,13 +15,14 @@ tooling/tsconfig/   → @app/tsconfig  (shared TypeScript config)
 - `pnpm dev:workers` — run deliver + scheduler workers
 - `pnpm dev:scraper` — run scraper worker
 - `make dev` — run all 3 concurrently
-- `make up` — start infra (MongoDB, Redis, Bull Board, Scraper)
+- `make up` — start infra (MongoDB, Redis, Bull Board, Playwright)
+- `pnpm build` — esbuild bundle all apps (production)
 - `pnpm -r lint` — type-check all packages
 - `pnpm -r test` — run all tests
 
 ## Important
 - NEVER use the same Instagram account for dev and prod
-- Scraper architecture details are in README.md
+- Scraper architecture details are in README.md, docs/scraper.md, and docs/stealth.md
 
 ## Background Tasks
 Before launching ANY background bash task (`run_in_background`):

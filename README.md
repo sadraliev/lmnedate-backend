@@ -9,7 +9,8 @@ Instagram scraper with Telegram delivery. Monitors public profiles, extracts pos
 - **Post enrichment** — engagement data (likes, comments, views) via `context.request` API + page navigation fallback
 - **Job queues** — BullMQ for scrape and deliver pipelines with retry/backoff
 - **Separate workers process** — deliver worker + scheduler in a dedicated process
-- **Structured logging** — pino with JSON in production, pretty-printed in dev
+- **Structured logging** — pino stdout in production (PM2 log rotation), pretty-printed in dev
+- **esbuild bundling** — each app compiles to a single standalone JS file for deploy
 
 ## Quick Start
 
@@ -35,6 +36,7 @@ make dev
 ```
 packages/shared/              # @app/shared — shared library
 ├── src/
+│   ├── env.ts                # loadEnv() — finds monorepo root, loads .env
 │   ├── logger.ts             # createLogger factory (pino)
 │   ├── redis.ts              # Redis connection config for BullMQ
 │   ├── queue-names.ts        # BullMQ queue name constants
@@ -192,7 +194,7 @@ make dev-workers      # Deliver + scheduler workers
 make dev-scraper      # Scraper worker
 
 # Build & Quality
-make build            # Build all packages
+make build            # esbuild bundle all apps (single JS per app)
 make lint             # Type-check all packages
 make test             # Run all tests
 
@@ -209,7 +211,7 @@ Copy `.env.example` to `.env` and configure:
 
 | Variable              | Description                 | Default                                    |
 |-----------------------|-----------------------------|--------------------------------------------|
-| `MONGODB_URI`         | MongoDB connection string   | `mongodb://localhost:27019/instagram-scraper` |
+| `MONGODB_URI`         | MongoDB connection string   | `mongodb://localhost:27019/fastify-app`    |
 | `REDIS_URL`           | Redis connection string     | `redis://localhost:6381`                   |
 | `TELEGRAM_BOT_TOKEN`  | Telegram bot API token      | —                                          |
 | `INSTAGRAM_USERNAME`  | Instagram login username    | —                                          |
@@ -217,6 +219,7 @@ Copy `.env.example` to `.env` and configure:
 | `SCRAPE_CONCURRENCY`  | Parallel scrape jobs        | `1`                                        |
 | `SCRAPE_TIMEOUT_MS`   | Scrape timeout per job      | `30000`                                    |
 | `IG_SESSION_PATH`     | Session file path           | `ig-session.json`                          |
+| `PLAYWRIGHT_WS`      | Playwright WebSocket URL    | `ws://localhost:3000/ws`                   |
 
 ## Tech Stack
 
@@ -226,5 +229,6 @@ Copy `.env.example` to `.env` and configure:
 - [Pino](https://getpino.io/) — structured logging
 - [MongoDB](https://www.mongodb.com/) — database
 - [Redis](https://redis.io/) — queue backend
+- [esbuild](https://esbuild.github.io/) — production bundling
 - [Vitest](https://vitest.dev/) — testing
 - [TypeScript](https://www.typescriptlang.org/) — language
