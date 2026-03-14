@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --watch src/bot.ts",
+    "dev": "tsx --conditions @app/source --watch src/bot.ts",
     "start": "node --import tsx src/bot.ts",
     "lint": "tsc --noEmit",
     "build": "tsc"

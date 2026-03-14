@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --watch src/worker.ts",
+    "dev": "tsx --conditions @app/source --watch src/worker.ts",
     "lint": "tsc --noEmit",
     "build": "tsc"
   },
