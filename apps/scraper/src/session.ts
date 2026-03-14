@@ -4,7 +4,7 @@
 
 import { readFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { Browser } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import { FINGERPRINT, EXTRA_HEADERS, applyStealthScripts } from './stealth.js';
 import { humanDelay, humanType } from './humanizer.js';
 import { createLogger } from '@app/shared';
@@ -12,6 +12,33 @@ import { createLogger } from '@app/shared';
 const logger = createLogger({ name: 'session' });
 
 const SESSION_PATH = process.env.IG_SESSION_PATH ?? 'ig-session.json';
+const ADMIN_CHAT_ID = '20471481';
+
+/**
+ * Send a screenshot to Telegram admin via Bot API.
+ */
+const notifyAdmin = async (page: Page, message: string): Promise<void> => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    logger.warn('TELEGRAM_BOT_TOKEN not set — cannot send notification');
+    return;
+  }
+
+  try {
+    const screenshot = await page.screenshot({ fullPage: true });
+    const form = new FormData();
+    form.append('chat_id', ADMIN_CHAT_ID);
+    form.append('caption', message);
+    form.append('photo', new Blob([screenshot], { type: 'image/png' }), 'login-debug.png');
+
+    await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: 'POST',
+      body: form,
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to send Telegram notification');
+  }
+};
 
 /**
  * Load a cached session from file. Returns the file path if valid, or null.
@@ -69,13 +96,21 @@ export const loginWithPlaywright = async (
     await submitButton.click();
     await humanDelay(2000, 4000);
 
+    // Check for login error before waiting for navigation
+    const errorBanner = page.locator('#slfErrorAlert, [data-testid="login-error-message"], [role="alert"]');
+    if (await errorBanner.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      const errorText = await errorBanner.textContent().catch(() => 'Unknown login error');
+      await notifyAdmin(page, `Login failed for @${username}: ${errorText}`);
+      logger.fatal({ username, errorText }, 'Login rejected by Instagram — stopping process');
+      process.exit(1);
+    }
+
     await page.waitForURL((url) => !url.pathname.includes('/accounts/login'), {
       timeout: 30_000,
     }).catch(async (err) => {
-      const screenshotPath = '/home/ubuntu/app/login-debug.png';
-      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-      logger.error({ url: page.url(), screenshotPath }, 'Login stuck — screenshot saved');
-      throw err;
+      await notifyAdmin(page, `Login timeout for @${username} — page stuck at ${page.url()}`);
+      logger.error({ url: page.url() }, 'Login stuck — screenshot sent to admin');
+      process.exit(1);
     });
 
     // Dismiss "Save login info" or "Turn on notifications" dialogs
